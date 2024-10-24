@@ -10,72 +10,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 
-MESSAGE_TYPES = ["DM", "GROUP_DM", "GUILD_TEXT", "PUBLIC_THREAD"]
-
-####################
-### EXTRACT DATA ###
-####################
-
-def extract_zip(zip_path):
-    '''
-    Extract the package.zip file in the package folder
-    '''
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(zip_path[:-4])
-
-def get_conversion_name_dict(index_path):
-    '''
-    Get the dict conversion for ID - Name
-    
-    Parameters:
-    index_path : str
-        The path to the index.json file
-    '''
-
-    with open(index_path, 'r', encoding='utf-8') as f:
-        index_data = json.load(f)
-    conversation_names = {key: value.replace("Direct Message with ", "").replace("#0", "") for key, value in index_data.items()}
-    return conversation_names
-
-def create_dataframe(messages_path, conversation_names):
-    '''
-    Create a DataFrame from the messages.json files
-    
-    Parameters:
-    messages_path : str
-        The path to the messages folder
-    conversation_names : dict
-        The dict conversion for ID - Name
-    '''
-
-    rows = []
-    for folder_name in tqdm(os.listdir(messages_path), desc="Processing folder", unit="folder"):
-        if folder_name.startswith('c'):
-            name = conversation_names.get(folder_name[1:], "Unknown channel")
-            type = json.load(open(os.path.join(messages_path, folder_name, "channel.json"), 'r', encoding='utf-8')).get("type", "Unknown")
-
-            with open(os.path.join(messages_path, folder_name, "messages.json"), 'r', encoding='utf-8') as f:
-                messages_data = json.load(f)
-                for message in messages_data:
-                    id = message.get("ID", "No ID")
-                    content = message.get("Contents", "No content")
-                    date = datetime.strptime(message.get("Timestamp"), "%Y-%m-%d %H:%M:%S")
-                    attachements = message.get("Attachements", [])
-
-                    rows.append({
-                        "ID": id, 
-                        "Name": name, 
-                        "Type": type, 
-                        "Timestamp": date, 
-                        "Contents": content, 
-                        "Attachements": attachements
-                    })
-    df = pd.DataFrame.from_records(rows)
-    return df
-
 ##########################
 ### DATA VISUALIZATION ###
 ##########################
+
+MESSAGE_TYPES = ["DM", "GROUP_DM", "GUILD_TEXT", "PUBLIC_THREAD"]
+
 
 def format_number(number):
     '''
