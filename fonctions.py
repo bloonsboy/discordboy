@@ -1,48 +1,26 @@
-import json
-import os
 import pandas as pd
-from tqdm import tqdm
-from datetime import datetime, timedelta
-from collections import defaultdict
+from datetime import timedelta
 import tabulate as tb
-import zipfile
 import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 
-##########################
-### DATA VISUALIZATION ###
-##########################
-
 MESSAGE_TYPES = ["DM", "GROUP_DM", "GUILD_TEXT", "PUBLIC_THREAD"]
-
 
 def format_number(number):
     '''
     Put spaces between numbers
-    
-    Parameters:
-    number : int
-        The number to format
     '''
     return f"{number:,}".replace(",", " ")
 
 
-def remove_emojis(text):
+def remove_spaces(text):
     '''
-    Remove emojis from the given text.
+    Remove multiples spaces from the given text.
     '''
-    emoji_pattern = re.compile("["
-                           u"\U0001F600-\U0001F64F"  # emoticons
-                           u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-                           u"\U0001F680-\U0001F6FF"  # transport & map symbols
-                           u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
-                           u"\U00002702-\U000027B0"  # other symbols
-                           u"\U000024C2-\U0001F251"  # enclosed characters
-                           u"\U00010000-\U0010FFFF"  # supplementary private use area (covers emojis like 🤙)
-                           "]+", flags=re.UNICODE)
-    text_clean = re.sub(r'\s+', ' ', emoji_pattern.sub(r'', text)).strip()
+    text_clean = re.sub(r'\s+', ' ', text).strip()
     return text_clean
+
 
 def ask_for_the_type():   
     '''
@@ -54,6 +32,7 @@ def ask_for_the_type():
         print("Invalid type")
         choice = input("Enter the type you want to analyse : DM, GROUP_DM, GUILD_TEXT, GUILD_VOICE or PUBLIC_THREAD").strip()
     return choice
+
 
 def df_date(df):   
     '''
@@ -70,19 +49,20 @@ def df_date(df):
         cutoff_date = pd.to_datetime(df['Timestamp']).max() - timedelta(days=int(date))
         return df[pd.to_datetime(df['Timestamp']) >= cutoff_date]
 
+
 def top_10_messages(df):
     '''
     Return the top 10 messages in the DataFrame.
     '''
 
-    top_10_messages_data = [[""] for _ in range(10)]
+    top_10_messages_data = [[i+1] for i in range(10)]
     total_count = []
     for message_type in MESSAGE_TYPES:
         top_10_names = df[df["Type"] == message_type]["Name"].value_counts().head(10)
         for i, (name, count) in enumerate(top_10_names.items()):
-            top_10_messages_data[i].append(f"{remove_emojis(name)} - {format_number(count)}")
+            top_10_messages_data[i].append(f"{remove_spaces(name)} - {format_number(count)}")
         total_count.append(format_number(df[df["Type"] == message_type].shape[0]))
-    
+    top_10_messages_data.append([]*10)
     top_10_messages_data.append(["Total"] + total_count)
     create_table(top_10_messages_data, headers=["TOP 10"]+MESSAGE_TYPES)
 
@@ -161,6 +141,7 @@ def taille_message(df):
 
 #Print a table from table_data
 def create_table(table_data, headers):
-    tb.PRESERVE_WHITESPACE = True
-    print(tb.tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
+    tb.PRESERVE_WHITESPACE = False
+    tb.WIDE_CHARS_MODE = True
+    print(tb.tabulate(table_data, headers=headers, tablefmt="rst"))
 

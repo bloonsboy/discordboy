@@ -2,17 +2,10 @@ import json
 import os
 import pandas as pd
 from tqdm import tqdm
-from datetime import datetime, timedelta
-from collections import defaultdict
+from datetime import datetime
 import zipfile
-import matplotlib.pyplot as plt
-import re
 
-MESSAGE_TYPES = ["DM", "GROUP_DM", "GUILD_TEXT", "PUBLIC_THREAD"]
-
-####################
-### EXTRACT DATA ###
-####################
+ERROR_USER = ["Direct Message with Unknown Participant", "None", "Unknown channel"]
 
 def ask_package():   
     '''
@@ -24,6 +17,7 @@ def ask_package():
     print("Package name : ", choice)
     return choice
 
+
 def extract_zip(zip_path):
     '''
     Extract the package.zip file in the package folder
@@ -31,6 +25,7 @@ def extract_zip(zip_path):
     zip_path = check_zip_path(zip_path)
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(zip_path[:-4])
+
 
 def check_zip_path(zip_path):
     '''
@@ -49,6 +44,7 @@ def check_zip_path(zip_path):
             raise FileNotFoundError(f"Zip file not found at {zip_path} or {download_path} or {documents_path}")
     return zip_path
 
+
 def get_conversion_name_dict(index_path):
     '''
     Get the dict conversion for ID - Name
@@ -56,8 +52,13 @@ def get_conversion_name_dict(index_path):
     index_path = check_zip_path(index_path)
     with open(index_path, 'r', encoding='utf-8') as f:
         index_data = json.load(f)
-    conversation_names = {key: value.replace("Direct Message with ", "").replace("#0", "") for key, value in index_data.items()}
+    conversation_names = {
+        key: (value.replace("Direct Message with ", "").replace("#0", "") 
+              if value not in ERROR_USER else key)
+        for key, value in index_data.items()
+    }
     return conversation_names
+
 
 def create_dataframe(messages_path, conversation_names):
     '''
@@ -73,6 +74,7 @@ def create_dataframe(messages_path, conversation_names):
             rows.extend(process_messages(messages_data, name, type))
     return pd.DataFrame.from_records(rows)
 
+
 def get_channel_type(messages_path, folder_name):
     '''
     Get the type of the channel from channel.json
@@ -81,6 +83,7 @@ def get_channel_type(messages_path, folder_name):
     with open(channel_path, 'r', encoding='utf-8') as f:
         return json.load(f).get("type", "Unknown")
 
+
 def load_messages(messages_path, folder_name):
     '''
     Load messages from messages.json
@@ -88,6 +91,7 @@ def load_messages(messages_path, folder_name):
     messages_path = os.path.join(messages_path, folder_name, "messages.json")
     with open(messages_path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
 
 def process_messages(messages_data, name, type):
     '''
