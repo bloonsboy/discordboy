@@ -36,28 +36,50 @@ def ask_for_the_type():
 
 def df_date(df):   
     '''
-    Ask the user for the date he wants to analyse    
+    Ask the user for the date range they want to analyse    
     ''' 
-    date = input("Date limit in format YYYY-MM-DD or number of days").strip()
-    while not date.replace("-", "").isdigit():
-        print("Invalid date")
-        date = input("Date limit in format YYYY-MM-DD or number of days").strip()
-    if len(date) == 10:
-        cutoff_date = pd.to_datetime(date)
-        return df[pd.to_datetime(df['Timestamp']) >= cutoff_date]
+    date_input = input("Enter date limit in format YYYY-MM-DD or number of days (for interval, separate with a comma): ").strip()
+    dates = date_input.split(',')
+    
+    if len(dates) == 1:
+        date = dates[0].strip()
+        while not date.replace("-", "").isdigit():
+            print("Invalid date")
+            date = input("Date limit in format YYYY-MM-DD or number of days").strip()
+        if len(date) == 10:
+            cutoff_date = pd.to_datetime(date)
+            return df[pd.to_datetime(df['Timestamp']) >= cutoff_date]
+        else:
+            cutoff_date = pd.to_datetime(df['Timestamp']).max() - timedelta(days=int(date))
+            return df[pd.to_datetime(df['Timestamp']) >= cutoff_date]
+    elif len(dates) == 2:
+        start_date, end_date = dates[0].strip(), dates[1].strip()
+        while not (start_date.replace("-", "").isdigit() and end_date.replace("-", "").isdigit()):
+            print("Invalid date range")
+            date_input = input("Enter date limit in format YYYY-MM-DD or number of days (for interval, separate with a comma): ").strip()
+            start_date, end_date = date_input.split(',')
+            start_date, end_date = start_date.strip(), end_date.strip()
+        if len(start_date) == 10 and len(end_date) == 10:
+            start_date = pd.to_datetime(start_date)
+            end_date = pd.to_datetime(end_date)
+        else:
+            start_date = pd.to_datetime(df['Timestamp']).max() - timedelta(days=int(start_date))
+            end_date = pd.to_datetime(df['Timestamp']).max() - timedelta(days=int(end_date))
+        return df[(pd.to_datetime(df['Timestamp']) >= start_date) & (pd.to_datetime(df['Timestamp']) <= end_date)]
     else:
-        cutoff_date = pd.to_datetime(df['Timestamp']).max() - timedelta(days=int(date))
-        return df[pd.to_datetime(df['Timestamp']) >= cutoff_date]
+        print("Invalid input format")
+        return df
 
 
 def top_10_messages(df):
     '''
     Return the top 10 messages in the DataFrame.
     '''
-
     top_10_messages_data = [[i+1] for i in range(10)]
     total_count = []
     for message_type in MESSAGE_TYPES:
+        if df[df["Type"] == message_type].empty:
+            continue
         top_10_names = df[df["Type"] == message_type]["Name"].value_counts().head(10)
         for i, (name, count) in enumerate(top_10_names.items()):
             top_10_messages_data[i].append(f"{remove_spaces(name)} - {format_number(count)}")
@@ -71,9 +93,10 @@ def message_statistics(df):
     '''
     Return the number of messages by type in the DataFrame, along with percentages and median sizes.
     '''
-
     message_data = []
     for message_type in MESSAGE_TYPES:
+        if df[df["Type"] == message_type].empty:
+            continue
         df_type = df[df["Type"] == message_type]
         percentage = (len(df_type) / len(df)) * 100
         median_size = df_type["Contents"].str.len().median()
@@ -91,22 +114,22 @@ def plot_message_statistics(df, window=50, type="message"):
     '''
     Plot the number of messages by type over time in the DataFrame.
     '''
-
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce').dt.date
-    plt.figure(figsize=(14, 8))
-
+    plt.figure(figsize=(14, 10))
     for message_type in MESSAGE_TYPES:
-        df_type = df[df['Type'] == message_type]
-        if type == "characater":
-            count = df_type.groupby('Timestamp')['Contents'].apply(lambda x: x.str.len().sum()) 
+        if df[df["Type"] == message_type].empty:
+            continue
+        df_type = df[df['Type'] == message_type].copy()
+        df_type['Timestamp'] = pd.to_datetime(df_type['Timestamp']).dt.date
+        if type == "character":
+            df_type['len'] = df_type["Contents"].apply(lambda x: len(x) if isinstance(x, str) else 1)
+            count = df_type.groupby('Timestamp')['len'].sum()
         else:
             count = df_type.groupby('Timestamp').size()
         smoothed_data = count.rolling(window=window, min_periods=1).mean()
         sns.lineplot(x=smoothed_data.index, y=smoothed_data.values, label=message_type)
 
-    plt.title('Number of Messages by Type Over Time (Smoothed)')
     plt.xlabel('Date')
-    plt.ylabel('Number of Messages')
+    plt.ylabel(f'Number of {type}s')
     plt.legend()
     plt.grid(True)
     plt.show()
