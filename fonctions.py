@@ -71,22 +71,22 @@ def df_date(df):
         return df
 
 
-def top_10_messages(df):
+def top_messages(df, number=10, type=["DM"]):
     '''
-    Return the top 10 messages in the DataFrame.
+    Return the top messages in the DataFrame.
     '''
-    top_10_messages_data = [[i+1] for i in range(10)]
+    top_messages_data = [[i+1] for i in range(number)]
     total_count = []
-    for message_type in MESSAGE_TYPES:
+    for message_type in type:
         if df[df["Type"] == message_type].empty:
             continue
-        top_10_names = df[df["Type"] == message_type]["Name"].value_counts().head(10)
-        for i, (name, count) in enumerate(top_10_names.items()):
-            top_10_messages_data[i].append(f"{remove_spaces(name)} - {format_number(count)}")
+        top_names = df[df["Type"] == message_type]["Name"].value_counts().head(number)
+        for i, (name, count) in enumerate(top_names.items()):
+            top_messages_data[i].append(f"{remove_spaces(name)} - {format_number(count)}")
         total_count.append(format_number(df[df["Type"] == message_type].shape[0]))
-    top_10_messages_data.append([]*10)
-    top_10_messages_data.append(["Total"] + total_count)
-    create_table(top_10_messages_data, headers=["TOP 10"]+MESSAGE_TYPES)
+    top_messages_data.append([]*number)
+    top_messages_data.append(["Total"] + total_count)
+    create_table(top_messages_data, headers=["TOP {number}", number]+type)
 
 
 def message_statistics(df):
