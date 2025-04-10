@@ -7,6 +7,8 @@ import zipfile
 
 ERROR_USER = ["Direct Message with Unknown Participant", "None", "Unknown channel"]
 
+### EXTRACT DATA FROM PACKAGE ###
+
 def ask_package():   
     '''
     Ask the user for the path of the package.zip file
@@ -44,6 +46,7 @@ def check_zip_path(zip_path):
             raise FileNotFoundError(f"Zip file not found at {zip_path} or {download_path} or {documents_path}")
     return zip_path
 
+### CONVERT DATA TO DATAFRAME ###
 
 def get_conversion_name_dict(index_path):
     '''
@@ -112,3 +115,13 @@ def process_messages(messages_data, name, type):
             "Attachments": attachments
         })
     return rows
+
+### CLEANING DATAFRAME ###
+
+def remove_mudae(df):
+    '''
+    Remove Mudae messages from the DataFrame
+    '''
+    condition = df['Name'].str.contains('mudae|huh', case=False, na=False)
+    df_filter = df[~condition]
+    return df_filter
