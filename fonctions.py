@@ -86,7 +86,8 @@ def top_messages(df, number=10, type=["DM"]):
         total_count.append(format_number(df[df["Type"] == message_type].shape[0]))
     top_messages_data.append([]*number)
     top_messages_data.append(["Total"] + total_count)
-    create_table(top_messages_data, headers=[f"TOP {number}"]+type)
+    # create_table(top_messages_data, headers=[f"TOP {number}"]+type)
+    return top_messages_data
 
 
 def message_statistics(df):
