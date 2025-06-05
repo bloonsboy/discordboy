@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 
+from rich.console import Console
+from rich.table import Table
+from rich import box
+
 MESSAGE_TYPES = ["DM", "GROUP_DM", "GUILD_TEXT", "PUBLIC_THREAD"]
 
 def format_number(number):
@@ -167,5 +171,53 @@ def taille_message(df):
 def create_table(table_data, headers):
     tb.PRESERVE_WHITESPACE = False
     tb.WIDE_CHARS_MODE = True
-    print(tb.tabulate(table_data, headers=headers, tablefmt="rst"))
+    print(tb.tabulate(table_data, headers=headers, tablefmt="presto"))
 
+
+def create_rich_table_updated(table_data, headers):
+    """
+    Crée et affiche une table formatée avec rich,
+    en empêchant le retour à la ligne interne et en utilisant la largeur disponible.
+    """
+    try:
+        # Sépare les données de la ligne de total
+        data_rows = [row for row in table_data if isinstance(row, list) and len(row) > 0 and str(row[0]).strip() != "Total"]
+        total_row_data = next((row for row in table_data if isinstance(row, list) and len(row) > 0 and str(row[0]).strip() == "Total"), None)
+
+        # Utiliser expand=True pour occuper la largeur, et un style de boîte simple
+        # show_lines=False peut parfois aider si les lignes interfèrent
+        table = Table(show_header=True, header_style="bold cyan",
+                      box=box.SIMPLE, expand=True, show_lines=False)
+
+        # Ajoute les colonnes
+        for i, header in enumerate(headers):
+            justify_rule = "left"
+            if i == 0: # Centrer la première colonne (index/rang)
+                 justify_rule = "center"
+
+            # *** Empêcher le retour à la ligne DANS les cellules ***
+            # C'est crucial pour garder chaque entrée sur une seule ligne.
+            no_wrap_flag = True
+
+            table.add_column(str(header), justify=justify_rule, no_wrap=no_wrap_flag)
+
+        # Ajoute les lignes de données
+        for row in data_rows:
+            table.add_row(*[str(item) for item in row])
+
+        # Section et ligne de total (optionnel)
+        if total_row_data and data_rows:
+             table.add_section()
+        if total_row_data:
+            table.add_row(*[f"[bold]{str(item)}[/bold]" for item in total_row_data])
+
+        # Affiche la table
+        console = Console()
+        console.print(table)
+
+    except Exception as e:
+        print(f"Error creating rich table: {e}")
+        # Fallback display
+        import tabulate as tb
+        print("Fallback display:")
+        print(tb.tabulate(table_data, headers=headers, tablefmt="plain"))
