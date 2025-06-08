@@ -1,8 +1,7 @@
 from dash import dcc, html
-from appus import CSV_FILE_NAME
+from .appus import CSV_FILE_NAME
 
-def create_upload_view():
-    """Génère la mise en page pour la vue de téléversement du fichier ZIP."""
+def upload_view():
     return html.Div(
         style={
             'fontFamily': 'Arial, sans-serif', 'padding': '30px', 'maxWidth': '700px',
@@ -10,15 +9,13 @@ def create_upload_view():
             'borderRadius': '8px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.1)'
         },
         children=[
-            html.H1("Importation des Données Discord", style={'color': '#007bff', 'marginBottom': '25px'}),
-            html.P(f"Le fichier de données requis ('{CSV_FILE_NAME}') est introuvable."),
-            html.P("Veuillez téléverser l'archive .zip de vos données Discord."),
+            html.H1("Discord Data #nerd", style={'color': '#007bff', 'marginBottom': '25px'}),
+            html.P("uh oh no package uploaded"),
             dcc.Upload(
                 id='upload-zip-data',
-                children=html.Div([
-                    'Glissez-déposez votre fichier .zip ici, ou ',
-                    html.A('Cliquez pour sélectionner un fichier', style={'color': '#007bff', 'textDecoration': 'underline', 'cursor': 'pointer'})
-                ]),
+                children=html.Div(
+                    html.A('Pleaaaaaaaase need a package.zip 🥺', style={'color': "#0053ac", 'textDecoration': 'underline', 'cursor': 'pointer'})
+                ),
                 style={
                     'width': '100%', 'height': '120px', 'lineHeight': '120px', 'borderWidth': '2px',
                     'borderStyle': 'dashed', 'borderColor': '#007bff', 'borderRadius': '5px',
@@ -31,7 +28,7 @@ def create_upload_view():
         ]
     )
 
-def create_main_page_view():
+def main_page_view():
     """Génère la mise en page pour la vue principale (après chargement des données)."""
     return html.Div(
         style={
