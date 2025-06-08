@@ -7,6 +7,8 @@ import zipfile
 
 ERROR_USER = ["Direct Message with Unknown Participant", "None", "Unknown channel"]
 
+### EXTRACT DATA FROM PACKAGE ###
+
 def ask_package():   
     '''
     Ask the user for the path of the package.zip file
@@ -44,6 +46,7 @@ def check_zip_path(zip_path):
             raise FileNotFoundError(f"Zip file not found at {zip_path} or {download_path} or {documents_path}")
     return zip_path
 
+### CONVERT DATA TO DATAFRAME ###
 
 def get_conversion_name_dict(index_path):
     '''
@@ -112,3 +115,42 @@ def process_messages(messages_data, name, type):
             "Attachments": attachments
         })
     return rows
+
+### CLEANING DATAFRAME ###
+
+def remove_mudae(df):
+    '''
+    Remove Mudae messages from the DataFrame
+    '''
+    condition = df['Name'].str.contains('mudae|huh', case=False, na=False) & df['Contents'].str.startswith('$', na=False)
+    df_filter = df[~condition]
+    return df_filter
+
+
+def cleaning_names(df):
+    '''
+    Clean the Name column of the DataFrame
+    '''
+    remplacement_dict = {
+        '788858111712690187': 'Alex', '392046922635935755': 'Ali', 'baka6893': 'Ali', 'zeykoo': 'Ali', 'akam.e': 'Alice', 'anita0732': 'Anita',
+        'axel005521': 'Axel', '.kleman': 'Clément VLP', 'darkysama': 'Clément VRG', 'cynthia_von_bottoks': 'Cynthia', 'solafleur': 'Emi', 'mynilly': 'Emy', 'ussererzada': 'Emy', 'iskander16': 'Isk', 'jooojx': 'Jooj',
+        'grospoutousan': 'Leo ECE', 'iwantdog': 'Leo Discord', 'moustillon': 'Lotarie', '482901836580257811': 'Lu Man',
+        'lupoticha': 'Lu Man', 'raijinsen': 'Marius', 'busto_': 'Matiya', 'panipowbleme': 'Matteo', '_noko.': 'Nadjy', 'dinoz_': 'Nicolas',
+        'mirapv': 'Nina', 'shinelikesirius': 'Noah', 'biiedronka': 'Pauline', 'sabrito_': 'Sabri', 'catnelle': 'Safia', 'ascended_sao': 'Sao My', 'simsimz': 'Simon', 'hanabiiii': 'Tatiana',
+        '855901206161129482': 'Toshi', 'sheimi.': 'Valou', '562692324719853609': 'Violet', 'ersees': 'Yanis',
+    }
+
+    df['Name'] = df['Name'].replace(remplacement_dict)
+
+    condition = df['Type'] == 'GUILD_TEXT'
+    df.loc[condition, 'Name'] = df.loc[condition, 'Name'].astype(str).str.replace('-', ' ', regex=False)
+    regex_pattern = r'^\s*(.*?)\s+(?i)in\s+(.*?)\s*$'
+    extracted_parts = df.loc[condition, 'Name'].astype(str).str.extract(regex_pattern)
+    extracted_parts.columns = ['channel', 'server']
+    valid_rows_indices = extracted_parts.dropna().index
+    df.loc[valid_rows_indices, 'Name'] = (
+        extracted_parts.loc[valid_rows_indices, 'server'].str.strip() +
+        ' | ' +
+        extracted_parts.loc[valid_rows_indices, 'channel'].str.strip()
+    )
+    return df
