@@ -1,4 +1,4 @@
-# dashboard/callbacks.py
+# dashboardus/callbackus.py
 
 import dash
 from dash import dcc, html
@@ -11,24 +11,59 @@ def register_callbacks(app, df, user_id_to_name_map, role_colors_map):
     """
     Enregistre toutes les fonctions de callback pour le tableau de bord Dash.
     """
+
+    def is_light_color(hex_color):
+        """Détermine si une couleur est claire en se basant sur la luminance."""
+        hex_color = hex_color.lstrip('#')
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+        return luminance > 0.7
+    
+    # Callback pour la plage de dates
     @app.callback(
         Output("date-picker-range", "start_date"),
         Output("date-picker-range", "end_date"),
         Input("date-range-dropdown", "value"),
+        State("date-picker-range", "min_date_allowed"),
+        State("date-picker-range", "max_date_allowed"),
     )
-    def update_date_picker(selected_period):
+    def update_date_picker(selected_period, min_date, max_date):
         today = datetime.now()
-        if selected_period == "current_year":
-            start_date = today.replace(month=1, day=1)
-            return start_date.date(), today.date()
-        elif selected_period == "last_365":
+        if not selected_period or selected_period == "last_365":
             start_date = today - timedelta(days=365)
+            return start_date.date(), today.date()
+        elif selected_period == "all-time":
+            return min_date, max_date
+        elif selected_period == "current_year":
+            start_date = today.replace(month=1, day=1)
             return start_date.date(), today.date()
         elif selected_period == "last_6_months":
             start_date = today - timedelta(days=180)
             return start_date.date(), today.date()
         return dash.no_update, dash.no_update
 
+    # Callback pour afficher la durée
+    @app.callback(
+        Output("date-range-display", "children"),
+        Input("date-picker-range", "start_date"),
+        Input("date-picker-range", "end_date"),
+    )
+    def display_date_range_duration(start_date, end_date):
+        if not start_date or not end_date:
+            return ""
+        
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        delta = end - start
+        
+        if delta.days < 365:
+            return f"Durée : {delta.days} jours"
+        else:
+            years = delta.days // 365
+            remaining_days = delta.days % 365
+            return f"Durée : {years} an(s) et {remaining_days} jour(s)"
+
+    # Callback principale pour mettre à jour les graphiques
     @app.callback(
         [
             Output("cumulative-graph", "figure"),
@@ -60,75 +95,76 @@ def register_callbacks(app, df, user_id_to_name_map, role_colors_map):
     def update_graphs(
         selected_users, start_date, end_date, top_n, cumulative_clicks, monthly_clicks, hourly_clicks, cumulative_style, monthly_style, hourly_style
     ):
+        if cumulative_style is None:
+            cumulative_style = {}
+        if monthly_style is None:
+            monthly_style = {}
+        if hourly_style is None:
+            hourly_style = {}
+
         ctx = dash.callback_context
         triggered_id = (ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None)
 
         if triggered_id == "toggle-cumulative":
-            cumulative_style = {"display": "none"} if cumulative_style.get("display") != "none" else {"height": "50vh", "minHeight": "400px"}
+            cumulative_style = {"display": "none"} if cumulative_style.get("display") != "none" else {}
         if triggered_id == "toggle-monthly":
-            monthly_style = {"display": "none"} if monthly_style.get("display") != "none" else {"height": "50vh", "minHeight": "400px"}
+            monthly_style = {"display": "none"} if monthly_style.get("display") != "none" else {}
         if triggered_id == "toggle-hourly":
-            hourly_style = {"display": "none"} if hourly_style.get("display") != "none" else {"height": "50vh", "minHeight": "400px"}
+            hourly_style = {"display": "none"} if hourly_style.get("display") != "none" else {}
 
         start_date_utc, end_date_utc = pd.to_datetime(start_date, utc=True), pd.to_datetime(end_date, utc=True)
         dff = df[(df["timestamp"] >= start_date_utc) & (df["timestamp"] <= end_date_utc)].copy()
 
-        # SOLUTION : Créer les colonnes à l'intérieur de la callback
         dff["month_year"] = dff["timestamp"].dt.tz_convert('Europe/Paris').dt.to_period("M").astype(str)
         dff["hour_of_day"] = dff["timestamp"].dt.tz_convert('Europe/Paris').dt.hour
 
-        # Logique de filtrage par le nombre de messages ou le Top N
-        # On détermine si l'utilisateur a changé le Top N ou la sélection d'utilisateurs
-        top_n_changed = triggered_id == "top-n-dropdown"
-        user_dropdown_changed = triggered_id == "user-dropdown"
+        user_counts_all_time = df["author_name"].value_counts()
+        sorted_users_by_count = user_counts_all_time.index.tolist()
 
-        if top_n_changed:
-            # Si le Top N a changé, on applique la nouvelle sélection
+        user_value = []
+        if triggered_id == "top-n-dropdown":
             if top_n == "1000+":
-                user_counts = dff["author_name"].value_counts()
-                top_users = user_counts[user_counts >= 1000].index.tolist()
-                user_options = [{"label": user, "value": user} for user in sorted(top_users)]
+                top_users = user_counts_all_time[user_counts_all_time >= 1000].index.tolist()
                 user_value = top_users
-            elif top_n != "all":
-                top_users = dff["author_name"].value_counts().nlargest(top_n).index.tolist()
-                user_options = [{"label": user, "value": user} for user in sorted(top_users)]
-                user_value = top_users
-            else: # top_n == "all"
-                top_users = sorted(dff["author_name"].unique())
-                user_options = [{"label": user, "value": user} for user in top_users]
-                user_value = top_users
-
-        elif user_dropdown_changed:
-            # Si l'utilisateur a modifié la liste des pseudos, on respecte sa sélection
-            top_users = sorted(dff["author_name"].unique())
-            user_options = [{"label": user, "value": user} for user in top_users]
-            user_value = selected_users
-
-        else:
-            # Sinon, on utilise la valeur par défaut du Top N
-            if top_n == "1000+":
-                user_counts = dff["author_name"].value_counts()
-                top_users = user_counts[user_counts >= 1000].index.tolist()
-                user_options = [{"label": user, "value": user} for user in sorted(top_users)]
-                user_value = top_users
-            elif top_n != "all":
-                top_users = dff["author_name"].value_counts().nlargest(top_n).index.tolist()
-                user_options = [{"label": user, "value": user} for user in sorted(top_users)]
-                user_value = top_users
+            elif top_n == "custom":
+                user_value = selected_users
             else:
-                top_users = sorted(dff["author_name"].unique())
-                user_options = [{"label": user, "value": user} for user in top_users]
-                user_value = selected_users if selected_users else top_users
+                try:
+                    n = int(top_n)
+                    top_users = user_counts_all_time.nlargest(n).index.tolist()
+                    user_value = top_users
+                except (ValueError, TypeError):
+                    user_value = selected_users
+        
+        elif triggered_id == "user-dropdown":
+            user_value = selected_users
+        else: # Gestion du cas initial ou d'une autre entrée
+             if top_n == 5:
+                user_value = user_counts_all_time.nlargest(5).index.tolist()
+             else:
+                user_value = selected_users
+
+        user_id_map = df.drop_duplicates(subset=["author_name"]).set_index("author_name")["author_id"].to_dict()
+        user_options = []
+        for user in sorted_users_by_count:
+            user_id = str(user_id_map.get(user, ""))
+            color = role_colors_map.get(user_id, "#666666")
+            
+            text_style = {"color": color, "fontWeight": "bold"}
+            if is_light_color(color):
+                text_style["textShadow"] = "1px 1px 2px rgba(0, 0, 0, 0.5)"
+            
+            user_options.append({
+                "label": html.Span(user, style=text_style),
+                "value": user
+            })
 
         dff_filtered = dff[dff["author_name"].isin(user_value)] if user_value else dff
-
         if dff_filtered.empty:
             return {}, {}, {}, [], [], user_options, user_value, cumulative_style, monthly_style, hourly_style
 
-        # Logique de couleurs (inchangée)
         color_map, colors_in_use = {}, {}
         default_color = "#666666"
-        user_id_map = df.drop_duplicates(subset=["author_name"]).set_index("author_name")["author_id"].to_dict()
 
         for user in user_value:
             user_id = str(user_id_map.get(user, ""))
@@ -146,7 +182,6 @@ def register_callbacks(app, df, user_id_to_name_map, role_colors_map):
                     color_map[users[i]] = fallback_colors[fallback_idx % len(fallback_colors)]
                     fallback_idx += 1
 
-        # Génération des graphiques (inchangée)
         fig_cumulative = create_cumulative_graph(dff_filtered, color_map)
         fig_monthly = create_monthly_graph(dff_filtered, color_map)
         fig_hourly = create_hourly_graph(dff_filtered, color_map)
