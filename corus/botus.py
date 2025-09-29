@@ -22,7 +22,7 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.messages = True
 intents.message_content = True
-intents.members = True  # <--- This line is essential.
+intents.members = True
 
 client = discord.Client(intents=intents)
 user_id_to_name_map = {}
@@ -47,7 +47,6 @@ async def fetch_and_save_role_colors(guild, filename):
 async def fetch_channel_messages_as_df(channel, after_date=None):
     """Récupère les messages d'un canal et les retourne sous forme de DataFrame."""
     messages = []
-    # Exclut les canaux spécifiques
     if "mudae" in channel.name.lower() or "log" in channel.name.lower():
         return pd.DataFrame()
     
@@ -56,8 +55,8 @@ async def fetch_channel_messages_as_df(channel, after_date=None):
         log_message += f" (après le {after_date.strftime('%Y-%m-%d %H:%M')})"
     logging.info(log_message)
     
-    start_time = time.time() # Ajout : on démarre le chronomètre
-    count = 0 # Ajout : un compteur de messages
+    start_time = time.time()
+    count = 0
     try:
         async for message in channel.history(limit=None, after=after_date):
             if not message.author.bot:
@@ -66,10 +65,11 @@ async def fetch_channel_messages_as_df(channel, after_date=None):
                     "author_id": message.author.id,
                     "author_name": str(message.author),
                     "channel_id": channel.id,
+                    # --- LIGNE MODIFIÉE ---
+                    "character_count": len(message.content.replace(' ', ''))
                 })
-                count += 1 # Ajout : incrémente le compteur
+                count += 1
         
-        # Ajout : on affiche un message de fin pour chaque salon
         end_time = time.time()
         logging.info(f"[FIN] Récupération de #{channel.name} terminée. {count} messages récupérés en {end_time - start_time:.2f} secondes.")
         
@@ -110,7 +110,7 @@ async def fetch_messages_with_cache(guild, cache_filename):
         df_new_known = df_new[df_new["author_name"] != "Deleted User#0000"].drop_duplicates(subset=["author_id"], keep="last")
         user_id_to_name_map.update(pd.Series(df_new_known.author_name.values, index=df_new_known.author_id).to_dict())
 
-    final_df = pd.concat([df_cache, df_new], ignore_index=True)
+    final_df = pd.concat([df_cache, df_new], ignore_index=True).drop_duplicates(subset=['timestamp', 'author_id'])
     final_df = final_df[~final_df["author_id"].isin(IDS_TO_EXCLUDE)]
     final_df.to_parquet(cache_filename)
 
@@ -133,14 +133,12 @@ async def run_bot(token, cache_filename, colors_filename):
     """
     Fonction principale pour exécuter le bot et lancer le processus.
     """
-    
-    # Utilisez une variable globale pour stocker les résultats
-    global dashboard_df, user_id_to_name_map_global, role_colors_map_global
-    dashboard_df = pd.DataFrame() # Initialisation
+    global dashboard_df, user_id_to_name_map_global, role_colors_map_global, current_member_ids_global
+    dashboard_df = pd.DataFrame()
     user_id_to_name_map_global = {}
     role_colors_map_global = {}
-    
-    # On utilise un événement pour signaler quand la tâche est terminée
+    current_member_ids_global = []
+
     on_ready_event = asyncio.Event()
 
     @client.event
@@ -154,24 +152,28 @@ async def run_bot(token, cache_filename, colors_filename):
         
         guild = client.guilds[0]
         try:
+            logging.info("Récupération de la liste des membres actuels...")
+            await guild.chunk()
+            current_members = [member.id for member in guild.members if not member.bot]
+            
             await fetch_and_save_role_colors(guild, colors_filename)
             main_df = await fetch_messages_with_cache(guild, cache_filename)
             logging.info("La collecte de données est terminée.")
             
-            # Stocke les résultats dans les variables globales
-            global dashboard_df, user_id_to_name_map_global, role_colors_map_global
+            global dashboard_df, user_id_to_name_map_global, role_colors_map_global, current_member_ids_global
             dashboard_df = main_df
             user_id_to_name_map_global = user_id_to_name_map
             role_colors_map_global = role_colors_map
+            current_member_ids_global = current_members
 
         except Exception as e:
             logging.error(f"Une erreur est survenue pendant la collecte : {e}")
         finally:
             await client.close()
-            on_ready_event.set() # Signale que la tâche est terminée
+            on_ready_event.set()
 
-    # Lance le bot en arrière-plan et attend que l'événement soit "set"
     asyncio.create_task(client.start(token))
     await on_ready_event.wait()
     
-    return dashboard_df, user_id_to_name_map_global, role_colors_map_global
+    return dashboard_df, user_id_to_name_map_global, role_colors_map_global, current_member_ids_global
+
