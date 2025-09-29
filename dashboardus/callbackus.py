@@ -8,16 +8,16 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-def register_callbacks(app, df, user_id_to_name_map, role_colors_map):
+def register_callbacks(app, df, user_id_to_name_map, role_colors_map, current_member_ids):
     """
     Enregistre toutes les fonctions de callback pour le tableau de bord Dash.
+    Le DataFrame 'df' est déjà nettoyé et préparé.
     """
-
     def is_light_color(hex_color):
         hex_color = hex_color.lstrip('#')
         rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
         luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
-        return luminance > 0.5 # Seuil ajusté pour un meilleur contraste
+        return luminance > 0.5
 
     @app.callback(
         Output("date-picker-range", "start_date"),
@@ -28,19 +28,11 @@ def register_callbacks(app, df, user_id_to_name_map, role_colors_map):
     )
     def update_date_picker(selected_period, min_date, max_date):
         today = datetime.now()
-        if not selected_period or selected_period == "custom":
-            return dash.no_update, dash.no_update
-        elif selected_period == "all-time":
-            return min_date, max_date
-        elif selected_period == "current_year":
-            start_date = today.replace(month=1, day=1)
-            return start_date.date(), today.date()
-        elif selected_period == "last_365":
-            start_date = today - timedelta(days=365)
-            return start_date.date(), today.date()
-        elif selected_period == "last_6_months":
-            start_date = today - timedelta(days=180)
-            return start_date.date(), today.date()
+        if not selected_period or selected_period == "custom": return dash.no_update, dash.no_update
+        elif selected_period == "all-time": return min_date, max_date
+        elif selected_period == "current_year": return today.replace(month=1, day=1).date(), today.date()
+        elif selected_period == "last_365": return (today - timedelta(days=365)).date(), today.date()
+        elif selected_period == "last_6_months": return (today - timedelta(days=180)).date(), today.date()
         return dash.no_update, dash.no_update
 
     @app.callback(
@@ -53,159 +45,249 @@ def register_callbacks(app, df, user_id_to_name_map, role_colors_map):
         start = datetime.strptime(start_date.split("T")[0], "%Y-%m-%d")
         end = datetime.strptime(end_date.split("T")[0], "%Y-%m-%d")
         delta = end - start
-        if delta.days < 365:
-            return f"Durée : {delta.days} jours"
-        else:
-            years = delta.days // 365
-            remaining_days = delta.days % 365
-            return f"Durée : {years} an(s) et {remaining_days} jour(s)"
+        years, days = divmod(delta.days, 365)
+        return f"Durée : {years} an(s) et {days} jour(s)" if years > 0 else f"Durée : {delta.days} jours"
 
     @app.callback(
-        Output("cumulative-graph", "figure"),
-        Output("monthly-graph", "figure"),
-        Output("hourly-graph", "figure"),
-        Output("monthly-leaderboard-container", "children"),
-        Output("daily-leaderboard-container", "children"),
-        Output("user-dropdown", "options"),
-        Output("user-dropdown", "value"),
-        Output("dynamic-styles", "children"),
-        Input("user-dropdown", "value"),
-        Input("date-picker-range", "start_date"),
-        Input("date-picker-range", "end_date"),
-        Input("top-n-dropdown", "value"),
+        Output("cumulative-graph", "figure"), Output("monthly-graph", "figure"),
+        Output("hourly-graph", "figure"), Output("monthly-leaderboard-container", "children"),
+        Output("daily-leaderboard-container", "children"), Output("user-dropdown", "options"),
+        Output("user-dropdown", "value"), Output("dynamic-styles", "children"),
+        Output("weekday-graph", "figure"), Output("user-profile-card-container", "children"),
+        Input("user-dropdown", "value"), Input("date-picker-range", "start_date"),
+        Input("date-picker-range", "end_date"), Input("top-n-dropdown", "value"),
+        Input("metric-selector", "value"),
     )
-    def update_all(selected_users, start_date, end_date, top_n):
+    def update_all(selected_users, start_date, end_date, top_n, metric_selected):
         ctx = dash.callback_context
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else "date-picker-range"
 
         start_date_utc = pd.to_datetime(start_date, utc=True)
         end_date_utc = pd.to_datetime(end_date, utc=True).replace(hour=23, minute=59, second=59)
         dff = df[(df["timestamp"] >= start_date_utc) & (df["timestamp"] <= end_date_utc)].copy()
-
+        
         dff["month_year"] = dff["timestamp"].dt.tz_convert('Europe/Paris').dt.to_period("M").astype(str)
         dff["hour_of_day"] = dff["timestamp"].dt.tz_convert('Europe/Paris').dt.hour
+        dff["weekday"] = dff["timestamp"].dt.day_name()
+
+        if metric_selected == 'characters':
+            user_counts_period = dff.groupby("author_name")['character_count'].sum().sort_values(ascending=False)
+        else:
+            user_counts_period = dff["author_name"].value_counts()
 
         user_counts_all_time = df["author_name"].value_counts()
         sorted_users_by_count = user_counts_all_time.index.tolist()
 
         user_value = selected_users
-        if triggered_id == "top-n-dropdown":
+        if triggered_id != "user-dropdown":
             if top_n == "1000+":
-                user_value = user_counts_all_time[user_counts_all_time >= 1000].index.tolist()
+                top_users_period = user_counts_period[user_counts_period >= 1000].index
+                user_value = list(top_users_period)
             elif top_n != "custom":
-                user_value = user_counts_all_time.nlargest(int(top_n)).index.tolist()
+                user_value = user_counts_period.nlargest(int(top_n)).index.tolist()
 
         user_id_map = df.drop_duplicates(subset=["author_name"]).set_index("author_name")["author_id"].to_dict()
-        user_options = []
-        for user in sorted_users_by_count:
-            user_id = str(user_id_map.get(user, ""))
-            color = role_colors_map.get(user_id, "#6c757d")
-            text_style = {"color": color, "fontWeight": "bold", "textShadow": "1px 1px 2px rgba(0,0,0,0.2)" if is_light_color(color) else "none"}
-            user_options.append({"label": html.Span(user, style=text_style), "value": user})
+        name_to_original_map = df.drop_duplicates(subset=["author_name"]).set_index("author_name")["original_author_name"].to_dict()
 
+        user_options = [
+            {
+                "label": html.Div([
+                    html.Span(user, style={
+                        "color": "#6c757d" if user_id_map.get(user) not in current_member_ids else role_colors_map.get(str(user_id_map.get(user)), "#6c757d"),
+                        "textDecoration": "line-through" if user_id_map.get(user) not in current_member_ids else "none",
+                        "fontWeight": "bold",
+                    }),
+                    html.Span(name_to_original_map.get(user, user), style={'display': 'none'})
+                ]),
+                "value": user
+            } for user in sorted_users_by_count
+        ]
+        
         dff_filtered = dff[dff["author_name"].isin(user_value)] if user_value else dff
 
-        # --- Génération des styles CSS dynamiques pour les sélections d'utilisateurs ---
-        dynamic_style_rules = ""
-        if user_value:
-            for user in user_value:
-                user_id = str(user_id_map.get(user, ""))
-                bg_color = role_colors_map.get(user_id, "#6c757d")
-                text_color = "#FFFFFF" if not is_light_color(bg_color) else "#000000"
-                user_selector = user.replace('"', '\\"')
-                dynamic_style_rules += f""".Select-value[title="{user_selector}"] {{
-                    background-color: {bg_color} !important;
-                    color: {text_color} !important;
-                    border-radius: 4px;
-                }}"""
+        server_hourly_counts = pd.DataFrame()
+        if not dff.empty:
+            agg_col = 'character_count' if metric_selected == 'characters' else 'author_id'
+            agg_func = 'sum' if metric_selected == 'characters' else 'count'
+            server_hourly_counts = dff.groupby("hour_of_day")[agg_col].agg(agg_func).reset_index()
+            server_hourly_counts.rename(columns={agg_col: 'value'}, inplace=True)
+            total_value_period = server_hourly_counts["value"].sum()
+            server_hourly_counts["percentage"] = (server_hourly_counts["value"] / total_value_period) * 100 if total_value_period > 0 else 0
+        
+        style_rules = []
+        for user in user_value:
+            safe_user = user.replace('"', '\\"')
+            user_id = user_id_map.get(user, "")
+            is_member = user_id in current_member_ids
 
-        empty_figure = go.Figure(layout={"template": "plotly_white"}).update_layout(
-            xaxis={"visible": False}, yaxis={"visible": False},
-            annotations=[{"text": "Pas de données à afficher", "xref": "paper", "yref": "paper", "showarrow": False, "font": {"size": 16}}]
-        )
+            bg_color = role_colors_map.get(str(user_id), "#6c757d") if is_member else "#f8f9fa"
+            text_color = ("#000000" if is_light_color(bg_color) else "#FFFFFF") if is_member else "#6c757d"
+            decoration = "none" if is_member else "line-through"
+
+            rule = f""".Select-value[title="{safe_user}"] {{
+                background-color: {bg_color} !important;
+                color: {text_color} !important;
+                border-radius: 4px;
+                text-decoration: {decoration};
+            }}"""
+            style_rules.append(rule)
+        
+        final_styles = f"<style>{''.join(style_rules)}</style>"
+
+        profile_card = []
+        if len(user_value) == 1:
+            profile_card = create_user_profile_card(user_value[0], dff, user_counts_period, metric_selected)
+        
+        empty_figure = go.Figure(layout={"template": "plotly_white", "annotations": [{"text": "Pas de données", "showarrow": False}]})
         empty_leaderboard = html.P("Pas de données pour cette période.", className="text-center text-muted p-4")
 
         if dff_filtered.empty:
-            return empty_figure, empty_figure, empty_figure, empty_leaderboard, empty_leaderboard, user_options, user_value, dynamic_style_rules
+            return empty_figure, empty_figure, create_hourly_graph(dff_filtered, {}, server_hourly_counts, metric_selected), empty_leaderboard, empty_leaderboard, user_options, user_value, final_styles, empty_figure, profile_card
 
         color_map = {user: role_colors_map.get(str(user_id_map.get(user)), "#6c757d") for user in user_value}
         
-        fig_cumulative = create_cumulative_graph(dff_filtered, color_map)
-        fig_monthly = create_monthly_graph(dff_filtered, color_map)
-        fig_hourly = create_hourly_graph(dff_filtered, color_map)
-        monthly_leaderboard = create_leaderboard(dff_filtered, 'M', "Mois gagnés", "%B %Y")
-        daily_leaderboard = create_leaderboard(dff_filtered, 'D', "Jours gagnés", "%d %B %Y")
+        fig_cumulative = create_cumulative_graph(dff_filtered, color_map, metric_selected)
+        fig_monthly = create_monthly_graph(dff_filtered, color_map, metric_selected)
+        fig_hourly = create_hourly_graph(dff_filtered, color_map, server_hourly_counts, metric_selected)
+        monthly_leaderboard = create_leaderboard(dff_filtered, 'M', "Mois gagnés", "%B %Y", metric_selected)
+        daily_leaderboard = create_leaderboard(dff_filtered, 'D', "Jours gagnés", "%d %B %Y", metric_selected)
+        fig_weekday = create_weekday_graph(dff_filtered, metric_selected)
 
-        return fig_cumulative, fig_monthly, fig_hourly, monthly_leaderboard, daily_leaderboard, user_options, user_value, dynamic_style_rules
+        return fig_cumulative, fig_monthly, fig_hourly, monthly_leaderboard, daily_leaderboard, user_options, user_value, final_styles, fig_weekday, profile_card
 
-def create_base_figure(title):
-    fig = go.Figure()
-    fig.update_layout(
-        title={"text": title, "x": 0.5, "font": {"size": 18}},
-        template="plotly_white",
-        legend={"title": "Utilisateurs"},
-        margin=dict(l=40, r=40, t=60, b=40),
-        font=dict(family="Inter, sans-serif")
-    )
-    return fig
+    def create_user_profile_card(user_name, dff, user_counts_period, metric_selected):
+        user_df = dff[dff["author_name"] == user_name]
+        if user_df.empty: return []
+        
+        if metric_selected == 'characters':
+            total_val = user_df['character_count'].sum()
+            total_server_val = dff['character_count'].sum()
+            label = "Caractères sur la période"
+        else:
+            total_val = len(user_df)
+            total_server_val = len(dff)
+            label = "Messages sur la période"
+            
+        percent_server = (total_val / total_server_val) * 100 if total_server_val > 0 else 0
+        fav_hour = user_df["hour_of_day"].mode()[0]
+        fav_day = user_df["weekday"].mode()[0]
+        rank = user_counts_period.index.get_loc(user_name) + 1 if user_name in user_counts_period.index else "N/A"
+        days_fr = {"Monday": "Lundi", "Tuesday": "Mardi", "Wednesday": "Mercredi", "Thursday": "Jeudi", "Friday": "Vendredi", "Saturday": "Samedi", "Sunday": "Dimanche"}
+        
+        return html.Div(
+            className="card shadow-sm mb-4 animate__animated animate__fadeIn",
+            children=[
+                html.Div(className="card-header fs-5", children=f"👤 Profil de {user_name}"),
+                html.Div(className="card-body", children=html.Ul(
+                    className="list-group list-group-flush",
+                    children=[
+                        html.Li(f"💬 {label} : {total_val:,.0f}".replace(',', ' '), className="list-group-item"),
+                        html.Li(f"📈 Part de l'activité du serveur : {percent_server:.2f}%", className="list-group-item"),
+                        html.Li(f"🏆 Classement sur la période : #{rank}", className="list-group-item"),
+                        html.Li(f"🕒 Heure de pointe : {fav_hour}h - {fav_hour+1}h", className="list-group-item"),
+                        html.Li(f"📅 Jour favori : {days_fr.get(fav_day, fav_day)}", className="list-group-item"),
+                    ]
+                ))
+            ]
+        )
 
-def create_cumulative_graph(dff_filtered, color_map):
-    fig = create_base_figure(None)
-    cumulative_data = dff_filtered.set_index("timestamp").groupby("author_name").resample("D").size().reset_index(name="daily_count")
-    cumulative_data["cumulative_messages"] = cumulative_data.groupby("author_name")["daily_count"].cumsum()
+    def create_weekday_graph(dff, metric_selected):
+        if dff.empty: return go.Figure()
+        days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        days_fr = {"Monday": "Lundi", "Tuesday": "Mardi", "Wednesday": "Mercredi", "Thursday": "Jeudi", "Friday": "Vendredi", "Saturday": "Samedi", "Sunday": "Dimanche"}
+        
+        if metric_selected == 'characters':
+            weekday_values = dff.groupby("weekday")['character_count'].sum().reindex(days_order).fillna(0).rename(index=days_fr)
+            y_label = "Nombre de caractères"
+        else:
+            weekday_values = dff.groupby("weekday").size().reindex(days_order).fillna(0).rename(index=days_fr)
+            y_label = "Nombre de messages"
+            
+        fig = px.bar(weekday_values, x=weekday_values.index, y=weekday_values.values, template="plotly_white", labels={"x": "Jour de la semaine", "y": y_label})
+        fig.update_traces(marker_color='#20c997')
+        return fig
+
+def create_cumulative_graph(dff_filtered, color_map, metric_selected):
+    if dff_filtered.empty: return go.Figure()
+    
+    if metric_selected == 'characters':
+        cumulative_data = dff_filtered.set_index("timestamp").groupby("author_name").resample("D")['character_count'].sum().reset_index(name="daily_value")
+        y_label = "Caractères cumulés"
+    else:
+        cumulative_data = dff_filtered.set_index("timestamp").groupby("author_name").resample("D").size().reset_index(name="daily_value")
+        y_label = "Messages cumulés"
+        
+    cumulative_data["cumulative_value"] = cumulative_data.groupby("author_name")["daily_value"].cumsum()
     return px.line(
-        cumulative_data, x="timestamp", y="cumulative_messages", color="author_name",
+        cumulative_data, x="timestamp", y="cumulative_value", color="author_name",
         color_discrete_map=color_map, template="plotly_white",
-        labels={"timestamp": "Date", "cumulative_messages": "Messages cumulés"}
+        labels={"timestamp": "Date", "cumulative_value": y_label}
     ).update_layout(legend={"title": "Utilisateurs"})
 
-def create_monthly_graph(dff_filtered, color_map):
-    monthly_counts = dff_filtered.groupby(["author_name", "month_year"]).size().reset_index(name="count")
-    fig = px.line(
-        monthly_counts, x="month_year", y="count", color="author_name",
-        color_discrete_map=color_map, markers=True, template="plotly_white",
-        labels={"month_year": "Mois", "count": "Nombre de messages"}
-    )
-    fig.update_xaxes(categoryorder="category ascending")
-    return fig.update_layout(legend={"title": "Utilisateurs"})
+def create_monthly_graph(dff_filtered, color_map, metric_selected):
+    if dff_filtered.empty: return go.Figure()
 
-def create_hourly_graph(dff_filtered, color_map):
-    hourly_counts = dff_filtered.groupby(["author_name", "hour_of_day"]).size().reset_index(name="count")
-    hourly_counts["total_per_user"] = hourly_counts.groupby("author_name")["count"].transform("sum")
-    hourly_counts["percentage"] = (hourly_counts["count"] / hourly_counts["total_per_user"]) * 100
+    if metric_selected == 'characters':
+        monthly_values = dff_filtered.groupby(["author_name", "month_year"])['character_count'].sum().reset_index(name="value")
+        y_label = "Nombre de caractères"
+    else:
+        monthly_values = dff_filtered.groupby(["author_name", "month_year"]).size().reset_index(name="value")
+        y_label = "Nombre de messages"
+        
     fig = px.line(
-        hourly_counts, x="hour_of_day", y="percentage", color="author_name",
+        monthly_values, x="month_year", y="value", color="author_name",
         color_discrete_map=color_map, markers=True, template="plotly_white",
-        labels={"hour_of_day": "Heure de la journée", "percentage": "Pourcentage de messages (%)"},
+        labels={"month_year": "Mois", "value": y_label}
     )
-    return fig.update_layout(xaxis={"dtick": 1}, legend={"title": "Utilisateurs"})
+    return fig.update_xaxes(categoryorder="category ascending").update_layout(legend={"title": "Utilisateurs"})
 
-def create_leaderboard(dff, period, metric_name, date_format):
-    resampled = dff.groupby([dff["timestamp"].dt.to_period(period), "author_name"]).size().reset_index(name="count")
-    if resampled.empty:
-        return html.P("Pas assez de données pour ce classement.", className="text-center p-3")
+def create_hourly_graph(dff_filtered, color_map, server_average_df, metric_selected):
+    if not dff_filtered.empty:
+        if metric_selected == 'characters':
+            hourly_values = dff_filtered.groupby(["author_name", "hour_of_day"])['character_count'].sum().reset_index(name="value")
+        else:
+            hourly_values = dff_filtered.groupby(["author_name", "hour_of_day"]).size().reset_index(name="value")
+        hourly_values["total_per_user"] = hourly_values.groupby("author_name")["value"].transform("sum")
+        hourly_values["percentage"] = (hourly_values["value"] / hourly_values["total_per_user"]) * 100 if hourly_values["total_per_user"].sum() > 0 else 0
+    else:
+        hourly_values = pd.DataFrame(columns=["hour_of_day", "percentage", "author_name"])
+
+    fig = px.line(
+        hourly_values, x="hour_of_day", y="percentage", color="author_name",
+        color_discrete_map=color_map, markers=True, template="plotly_white",
+        labels={"hour_of_day": "Heure de la journée", "percentage": "Pourcentage de l'activité (%)"},
+    )
+    if not server_average_df.empty:
+        fig.add_trace(go.Scatter(
+            x=server_average_df["hour_of_day"], y=server_average_df["percentage"],
+            mode='lines', name='Moyenne du Serveur', line=dict(color='#d62728', width=4),
+        ))
+    return fig.update_layout(xaxis={"dtick": 1}, legend={"title": "Légende"})
+
+def create_leaderboard(dff, period, metric_name, date_format, metric_selected):
+    if dff.empty: return html.P("Pas de données.", className="text-center p-3")
     
-    winners = resampled.loc[resampled.groupby("timestamp")["count"].idxmax()]
+    if metric_selected == 'characters':
+        resampled = dff.groupby([dff["timestamp"].dt.to_period(period), "author_name"])['character_count'].sum().reset_index(name="value")
+    else:
+        resampled = dff.groupby([dff["timestamp"].dt.to_period(period), "author_name"]).size().reset_index(name="value")
+        
+    if resampled.empty: return html.P("Pas assez de données.", className="text-center p-3")
+    
+    winners = resampled.loc[resampled.groupby("timestamp")["value"].idxmax()]
     wins_df = winners.groupby("author_name")["timestamp"].agg(list).reset_index()
     wins_df[metric_name] = wins_df["timestamp"].apply(len)
     wins_df = wins_df.sort_values(metric_name, ascending=False).head(10)
     
-    items = []
-    for i, row in wins_df.iterrows():
-        rank = len(items) + 1
-        tooltip_text = ", ".join([d.strftime(date_format) for d in row["timestamp"]])
-        item = html.Li(
+    items = [
+        html.Li(
             className="list-group-item d-flex justify-content-between align-items-center leaderboard-item",
-            title=tooltip_text,
+            title=", ".join([d.strftime(date_format) for d in row["timestamp"]]),
             children=[
-                html.Div([
-                    html.Span(f"{rank}.", className="leaderboard-rank"),
-                    html.Span(row['author_name']),
-                ]),
+                html.Div([html.Span(f"{i + 1}.", className="leaderboard-rank"), html.Span(row['author_name'])]),
                 html.Span(f"{row[metric_name]}", className="badge rounded-pill"),
             ]
-        )
-        items.append(item)
-
+        ) for i, row in wins_df.iterrows()
+    ]
     return html.Ul(items, className="list-group list-group-flush")
 
