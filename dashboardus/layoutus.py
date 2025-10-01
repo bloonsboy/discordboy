@@ -6,19 +6,10 @@ from datetime import datetime
 import pandas as pd
 
 def create_layout(df):
-    """
-    Crée le layout du tableau de bord Dash en utilisant les données du DataFrame.
-    """
     if df.empty:
-        return html.Div("Aucune donnée disponible pour créer le tableau de bord.")
-
-    # Pré-calculer les 5 premiers utilisateurs pour la valeur par défaut
-    user_counts_all_time = df["author_name"].value_counts()
-    initial_users = user_counts_all_time.nlargest(5).index.tolist()
-
+        return html.Div("No data available to display.")
     min_date = df["timestamp"].min().date()
     max_date = df["timestamp"].max().date()
-
     return html.Div(
         className="container-fluid bg-light",
         style={"fontFamily": "Inter, sans-serif"},
@@ -30,7 +21,7 @@ def create_layout(df):
                     className="container d-flex align-items-center py-3",
                     children=[
                         html.I(className="fas fa-chart-bar me-3", style={"fontSize": "2rem", "color": "#4a90e2"}),
-                        html.H1("Tableau de Bord des Messages Discord", className="h3 mb-0"),
+                        html.H1("Message Dashboard", className="h3 mb-0"),
                     ]
                 )
             ),
@@ -41,7 +32,7 @@ def create_layout(df):
                 children=html.Div(
                     className="card-body",
                     children=[
-                        html.H5("Filtres", className="card-title"),
+                        html.H5("Filters", className="card-title"),
                         html.Div(
                             className="row g-3 align-items-end",
                             children=[
@@ -52,30 +43,29 @@ def create_layout(df):
                                         dcc.Dropdown(
                                             id="top-n-dropdown",
                                             options=[
-                                                {"label": "Top 5", "value": 5}, {"label": "Top 10", "value": 10},
-                                                {"label": "Top 20", "value": 20}, {"label": "+ 1000 messages", "value": "1000+"},
-                                                {"label": "Personnalisé", "value": "custom"},
+                                                {"label": "Top 5", "value": 5}, {"label": "Top 10", "value": 10}, {"label": "Top 20", "value": 20}, 
+                                                {"label": "Top 50", "value": 50}, {"label": "Custom", "value": "custom"},
                                             ],
-                                            value=5, clearable=False,
+                                            value=10, clearable=False,
                                         ),
                                     ]
                                 ),
                                 html.Div(
                                     className="col-md-5",
                                     children=[
-                                        html.Label("Utilisateurs", className="form-label"),
+                                        html.Label("Users", className="form-label"),
                                         dcc.Dropdown(id="user-dropdown", multi=True),
                                     ]
                                 ),
                                 html.Div(
                                     className="col-md-4",
                                     children=[
-                                        html.Label("Période", className="form-label"),
+                                        html.Label("Time", className="form-label"),
                                         dcc.Dropdown(
                                             id="date-range-dropdown",
                                             options=[
-                                                {"label": "Personnalisé", "value": "custom"}, {"label": "Année en cours", "value": "current_year"},
-                                                {"label": "Derniers 365 jours", "value": "last_365"}, {"label": "Derniers 6 mois", "value": "last_6_months"},
+                                                {"label": "Custom", "value": "custom"}, {"label": "Current Year", "value": "current_year"},
+                                                {"label": "Last 365 Days", "value": "last_365"}, {"label": "Last 6 Months", "value": "last_6_months"},
                                                 {"label": "All-time", "value": "all-time"},
                                             ],
                                             value="last_365", clearable=False,
@@ -85,7 +75,7 @@ def create_layout(df):
                                 html.Div(
                                     className="col-md-8",
                                     children=[
-                                        html.Label("Plage de dates", className="form-label"),
+                                        html.Label("Date Range", className="form-label"),
                                         dcc.DatePickerRange(
                                             id="date-picker-range",
                                             min_date_allowed=min_date, max_date_allowed=max_date,
@@ -95,16 +85,15 @@ def create_layout(df):
                                         html.Div(id="date-range-display", className="text-muted mt-2 small"),
                                     ]
                                 ),
-                                # <-- NOUVEAU SÉLECTEUR -->
                                 html.Div(
                                     className="col-md-4",
                                     children=[
-                                        html.Label("Analyser par :", className="form-label fw-bold"),
+                                        html.Label("Analyze by :", className="form-label fw-bold"),
                                         dbc.RadioItems(
                                             id='metric-selector',
                                             options=[
-                                                {'label': 'Nombre de Messages', 'value': 'messages'},
-                                                {'label': 'Nombre de Caractères', 'value': 'characters'},
+                                                {'label': 'Message Count', 'value': 'messages'},
+                                                {'label': 'Character Count', 'value': 'characters'},
                                             ],
                                             value='messages',
                                             inline=True,
@@ -124,12 +113,12 @@ def create_layout(df):
             html.Div(
                 className="row",
                 children=[
-                    html.Div(className="col-lg-12 mb-4", children=create_graph_card("📈 Évolution Cumulative", "cumulative-graph")),
-                    html.Div(className="col-lg-6 mb-4", children=create_graph_card("📅 Activité par Mois", "monthly-graph")),
-                    html.Div(className="col-lg-6 mb-4", children=create_graph_card("⏰ Distribution Horaire (%)", "hourly-graph")),
-                    html.Div(className="col-lg-6 mb-4", children=create_graph_card("🗓️ Activité par Jour de la Semaine", "weekday-graph")),
-                    html.Div(className="col-lg-3 mb-4", children=create_leaderboard_card("🏆 Champions Mensuels", "monthly-leaderboard-container")),
-                    html.Div(className="col-lg-3 mb-4", children=create_leaderboard_card("🥇 Champions Journaliers", "daily-leaderboard-container")),
+                    html.Div(className="col-lg-12 mb-4", children=create_graph_card("📈 Cumulative Evolution", "cumulative-graph")),
+                    html.Div(className="col-lg-12 mb-4", children=create_graph_card("📅 Monthly Activity", "monthly-graph")),
+                    html.Div(className="col-lg-6 mb-4", children=create_graph_card("⏰ Hourly Distribution (%)", "hourly-graph")),
+                    html.Div(className="col-lg-6 mb-4", children=create_graph_card("🗓️ Weekly Activity", "weekday-graph")),
+                    html.Div(className="col-lg-3 mb-4", children=create_leaderboard_card("🏆 Monthly Champions", "monthly-leaderboard-container")),
+                    html.Div(className="col-lg-3 mb-4", children=create_leaderboard_card("🥇 Daily Champions", "daily-leaderboard-container")),
                 ],
             ),
         ],
