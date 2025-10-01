@@ -1,6 +1,6 @@
 body {
     font-family: 'Inter', sans-serif;
-    background-color: #f8f9fa; /* Un gris très clair */
+    background-color: #f8f9fa;
 }
 
 .main-title {
@@ -25,16 +25,14 @@ body {
     color: #6c757d;
 }
 
-/* Badge dans les classements (bleu plus clair) */
 .leaderboard-item .badge {
     background-color: #cfe2ff !important;
     color: #0d6efd !important;
     font-size: 0.9em;
 }
 
-/* Correction du z-index pour les menus déroulants */
 #filter-panel {
-    position: relative; /* Nécessaire pour que z-index fonctionne */
-    z-index: 10;      /* Assure que ce panneau est au-dessus des autres éléments */
+    position: relative;
+    z-index: 10;
 }
 

@@ -8,11 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-def register_callbacks(app, df, user_id_to_name_map, role_colors_map, current_member_ids):
-    """
-    Enregistre toutes les fonctions de callback pour le tableau de bord Dash.
-    Le DataFrame 'df' est déjà nettoyé et préparé.
-    """
+def register_callbacks(app, df, role_colors_map, current_member_ids):
     def is_light_color(hex_color):
         hex_color = hex_color.lstrip('#')
         rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -139,7 +135,7 @@ def register_callbacks(app, df, user_id_to_name_map, role_colors_map, current_me
             profile_card = create_user_profile_card(user_value[0], dff, user_counts_period, metric_selected)
         
         empty_figure = go.Figure(layout={"template": "plotly_white", "annotations": [{"text": "Pas de données", "showarrow": False}]})
-        empty_leaderboard = html.P("Pas de données pour cette période.", className="text-center text-muted p-4")
+        empty_leaderboard = html.P("No data available for this period.", className="text-center text-muted p-4")
 
         if dff_filtered.empty:
             return empty_figure, empty_figure, create_hourly_graph(dff_filtered, {}, server_hourly_counts, metric_selected), empty_leaderboard, empty_leaderboard, user_options, user_value, final_styles, empty_figure, profile_card
