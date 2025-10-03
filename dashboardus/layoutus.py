@@ -113,12 +113,43 @@ def create_layout(df):
             html.Div(
                 className="row",
                 children=[
-                    html.Div(className="col-lg-12 mb-4", children=create_graph_card("📈 Cumulative Evolution", "cumulative-graph")),
-                    html.Div(className="col-lg-12 mb-4", children=create_graph_card("📅 Monthly Activity", "monthly-graph")),
+                    # --- MODIFICATION ICI ---
+                    html.Div(
+                        className="col-lg-12 mb-4",
+                        children=html.Div(
+                            className="card shadow-sm h-100",
+                            children=[
+                                html.Div(
+                                    className="card-header d-flex justify-content-between align-items-center",
+                                    children=[
+                                        html.H5("📈 Temporal Evolution", className="card-title mb-0"),
+                                        dbc.RadioItems(
+                                            id='evolution-graph-selector',
+                                            options=[
+                                                {'label': 'Cumulative', 'value': 'cumulative'},
+                                                {'label': 'Monthly', 'value': 'monthly'},
+                                            ],
+                                            value='cumulative',
+                                            inline=True,
+                                            labelClassName="me-3",
+                                            inputClassName="me-1",
+                                        )
+                                    ]
+                                ),
+                                html.Div(
+                                    className="card-body",
+                                    children=dcc.Loading(
+                                        dcc.Graph(id='evolution-graph', style={'height': '500px'}),
+                                        type="default"
+                                    )
+                                ),
+                            ]
+                        )
+                    ),
                     html.Div(className="col-lg-6 mb-4", children=create_graph_card("⏰ Hourly Distribution (%)", "hourly-graph")),
                     html.Div(className="col-lg-6 mb-4", children=create_graph_card("🗓️ Weekly Activity", "weekday-graph")),
-                    html.Div(className="col-lg-3 mb-4", children=create_leaderboard_card("🏆 Monthly Champions", "monthly-leaderboard-container")),
-                    html.Div(className="col-lg-3 mb-4", children=create_leaderboard_card("🥇 Daily Champions", "daily-leaderboard-container")),
+                    html.Div(className="col-lg-6 mb-4", children=create_leaderboard_card("🏆 Monthly Champions", "monthly-leaderboard-container")),
+                    html.Div(className="col-lg-6 mb-4", children=create_leaderboard_card("🥇 Daily Champions", "daily-leaderboard-container")),
                 ],
             ),
         ],
