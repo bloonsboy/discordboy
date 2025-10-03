@@ -15,21 +15,7 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
         return luminance > 0.5
 
-    @app.callback(
-        Output("date-picker-range", "start_date"),
-        Output("date-picker-range", "end_date"),
-        Input("date-range-dropdown", "value"),
-        State("date-picker-range", "min_date_allowed"),
-        State("date-picker-range", "max_date_allowed"),
-    )
-    def update_date_picker(selected_period, min_date, max_date):
-        today = datetime.now()
-        if not selected_period or selected_period == "custom": return dash.no_update, dash.no_update
-        elif selected_period == "all-time": return min_date, max_date
-        elif selected_period == "current_year": return today.replace(month=1, day=1).date(), today.date()
-        elif selected_period == "last_365": return (today - timedelta(days=365)).date(), today.date()
-        elif selected_period == "last_6_months": return (today - timedelta(days=180)).date(), today.date()
-        return dash.no_update, dash.no_update
+    # La fonction update_date_picker a été supprimée pour centraliser la logique et éviter les dépendances circulaires.
 
     @app.callback(
         Output("date-range-display", "children"),
@@ -45,7 +31,6 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         return f"Durée : {years} an(s) et {days} jour(s)" if years > 0 else f"Durée : {delta.days} jours"
 
     @app.callback(
-        # --- CORRECTION DE LA LISTE DES SORTIES ---
         Output("evolution-graph", "figure"), 
         Output("hourly-graph", "figure"), 
         Output("monthly-leaderboard-container", "children"),
@@ -55,19 +40,56 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         Output("dynamic-styles", "children"),
         Output("weekday-graph", "figure"), 
         Output("user-profile-card-container", "children"),
+        Output("highlight-user-dropdown", "options"),
+        Output("top-n-dropdown", "value"),
+        Output("date-range-dropdown", "value"),
+        Output("date-picker-range", "start_date"), # Nouvel output pour gérer les dates
+        Output("date-picker-range", "end_date"),   # Nouvel output pour gérer les dates
         Input("user-dropdown", "value"), 
         Input("date-picker-range", "start_date"),
         Input("date-picker-range", "end_date"), 
         Input("top-n-dropdown", "value"),
         Input("metric-selector", "value"),
         Input("evolution-graph-selector", "value"),
+        Input("highlight-user-dropdown", "value"),
+        Input("date-range-dropdown", "value"),
+        State("date-picker-range", "min_date_allowed"),
+        State("date-picker-range", "max_date_allowed"),
     )
-    def update_all(selected_users, start_date, end_date, top_n, metric_selected, evolution_view):
+    def update_all(selected_users, start_date, end_date, top_n, metric_selected, evolution_view, highlighted_user, date_range_period, min_date_allowed, max_date_allowed):
         ctx = dash.callback_context
-        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else "date-picker-range"
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
 
-        start_date_utc = pd.to_datetime(start_date, utc=True)
-        end_date_utc = pd.to_datetime(end_date, utc=True).replace(hour=23, minute=59, second=59)
+        # --- LOGIQUE POUR LES FILTRES CUSTOM & DATES ---
+        new_top_n_value = top_n
+        if triggered_id == "user-dropdown":
+            new_top_n_value = "custom"
+        
+        new_date_range_period = date_range_period
+        if triggered_id == "date-picker-range":
+            new_date_range_period = "custom"
+
+        output_start_date, output_end_date = start_date, end_date
+
+        # Gérer le chargement initial pour définir la période par défaut
+        if triggered_id is None: # C'est le premier chargement de la page
+            today = datetime.now()
+            output_start_date = (today - timedelta(days=365)).date()
+            output_end_date = today.date()
+            new_date_range_period = "last_365" # S'assurer que le dropdown est correct
+        elif triggered_id == "date-range-dropdown":
+            today = datetime.now()
+            if date_range_period == "all-time": 
+                output_start_date, output_end_date = min_date_allowed, max_date_allowed
+            elif date_range_period == "current_year": 
+                output_start_date, output_end_date = today.replace(month=1, day=1).date(), today.date()
+            elif date_range_period == "last_365": 
+                output_start_date, output_end_date = (today - timedelta(days=365)).date(), today.date()
+            elif date_range_period == "last_6_months": 
+                output_start_date, output_end_date = (today - timedelta(days=180)).date(), today.date()
+
+        start_date_utc = pd.to_datetime(output_start_date, utc=True)
+        end_date_utc = pd.to_datetime(output_end_date, utc=True).replace(hour=23, minute=59, second=59)
         dff = df[(df["timestamp"] >= start_date_utc) & (df["timestamp"] <= end_date_utc)].copy()
         
         dff["month_year"] = dff["timestamp"].dt.tz_convert('Europe/Paris').dt.to_period("M").astype(str)
@@ -83,11 +105,8 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         sorted_users_by_count = user_counts_all_time.index.tolist()
 
         user_value = selected_users
-        if triggered_id != "user-dropdown":
-            if top_n == "1000+":
-                top_users_period = user_counts_period[user_counts_period >= 1000].index
-                user_value = list(top_users_period)
-            elif top_n != "custom":
+        if triggered_id in ["top-n-dropdown", "date-picker-range", "metric-selector", "date-range-dropdown"] or triggered_id is None:
+            if top_n != "custom":
                 user_value = user_counts_period.nlargest(int(top_n)).index.tolist()
 
         user_id_map = df.drop_duplicates(subset=["author_name"]).set_index("author_name")["author_id"].to_dict()
@@ -139,28 +158,30 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         final_styles = f"<style>{''.join(style_rules)}</style>"
 
         profile_card = []
-        if len(user_value) == 1:
-            profile_card = create_user_profile_card(user_value[0], dff, user_counts_period, metric_selected)
+        if highlighted_user:
+            profile_card = create_user_profile_card(highlighted_user, dff, user_counts_period, metric_selected)
         
+        highlight_options = [{'label': user, 'value': user} for user in user_value]
+
         empty_figure = go.Figure(layout={"template": "plotly_white", "annotations": [{"text": "Pas de données", "showarrow": False}]})
         empty_leaderboard = html.P("No data available for this period.", className="text-center text-muted p-4")
 
         if dff_filtered.empty:
-            return empty_figure, create_hourly_graph(dff_filtered, {}, server_hourly_counts, metric_selected), empty_leaderboard, empty_leaderboard, user_options, user_value, final_styles, empty_figure, profile_card
+            return empty_figure, create_hourly_graph(dff_filtered, {}, server_hourly_counts, metric_selected, None), empty_leaderboard, empty_leaderboard, user_options, user_value, final_styles, empty_figure, profile_card, highlight_options, new_top_n_value, new_date_range_period, output_start_date, output_end_date
 
         color_map = {user: role_colors_map.get(str(user_id_map.get(user)), "#6c757d") for user in user_value}
         
         if evolution_view == 'cumulative':
-            fig_evolution = create_cumulative_graph(dff_filtered, color_map, metric_selected)
+            fig_evolution = create_cumulative_graph(dff_filtered, color_map, metric_selected, highlighted_user)
         else: # 'monthly'
-            fig_evolution = create_monthly_graph(dff_filtered, color_map, metric_selected)
+            fig_evolution = create_monthly_graph(dff_filtered, color_map, metric_selected, highlighted_user)
         
-        fig_hourly = create_hourly_graph(dff_filtered, color_map, server_hourly_counts, metric_selected)
+        fig_hourly = create_hourly_graph(dff_filtered, color_map, server_hourly_counts, metric_selected, highlighted_user)
         monthly_leaderboard = create_leaderboard(dff_filtered, 'M', "Mois gagnés", "%B %Y", metric_selected)
         daily_leaderboard = create_leaderboard(dff_filtered, 'D', "Jours gagnés", "%d %B %Y", metric_selected)
         fig_weekday = create_weekday_graph(dff_filtered, metric_selected)
 
-        return fig_evolution, fig_hourly, monthly_leaderboard, daily_leaderboard, user_options, user_value, final_styles, fig_weekday, profile_card
+        return fig_evolution, fig_hourly, monthly_leaderboard, daily_leaderboard, user_options, user_value, final_styles, fig_weekday, profile_card, highlight_options, new_top_n_value, new_date_range_period, output_start_date, output_end_date
 
     def create_user_profile_card(user_name, dff, user_counts_period, metric_selected):
         user_df = dff[dff["author_name"] == user_name]
@@ -214,7 +235,7 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         fig.update_traces(marker_color='#20c997')
         return fig
 
-def create_cumulative_graph(dff_filtered, color_map, metric_selected):
+def create_cumulative_graph(dff_filtered, color_map, metric_selected, highlighted_user):
     if dff_filtered.empty: return go.Figure()
     
     if metric_selected == 'characters':
@@ -225,13 +246,21 @@ def create_cumulative_graph(dff_filtered, color_map, metric_selected):
         y_label = "Messages cumulés"
         
     cumulative_data["cumulative_value"] = cumulative_data.groupby("author_name")["daily_value"].cumsum()
-    return px.line(
+    fig = px.line(
         cumulative_data, x="timestamp", y="cumulative_value", color="author_name",
         color_discrete_map=color_map, template="plotly_white",
         labels={"timestamp": "Date", "cumulative_value": y_label}
-    ).update_layout(legend={"title": "Utilisateurs"})
+    ).update_layout(legend={"title": "Utilisateurs"}, height=600)
+    
+    # --- HIGHLIGHT LOGIC ---
+    if highlighted_user:
+        for trace in fig.data:
+            if trace.name == highlighted_user:
+                trace.line.width = 4
+    
+    return fig
 
-def create_monthly_graph(dff_filtered, color_map, metric_selected):
+def create_monthly_graph(dff_filtered, color_map, metric_selected, highlighted_user):
     if dff_filtered.empty: return go.Figure()
 
     if metric_selected == 'characters':
@@ -245,10 +274,18 @@ def create_monthly_graph(dff_filtered, color_map, metric_selected):
         monthly_values, x="month_year", y="value", color="author_name",
         color_discrete_map=color_map, markers=True, template="plotly_white",
         labels={"month_year": "Mois", "value": y_label}
-    )
-    return fig.update_xaxes(categoryorder="category ascending").update_layout(legend={"title": "Utilisateurs"})
+    ).update_xaxes(categoryorder="category ascending").update_layout(legend={"title": "Utilisateurs"}, height=600)
+    
+    # --- HIGHLIGHT LOGIC ---
+    if highlighted_user:
+        for trace in fig.data:
+            if trace.name == highlighted_user:
+                trace.line.width = 4
+                trace.marker.size = 10
+    
+    return fig
 
-def create_hourly_graph(dff_filtered, color_map, server_average_df, metric_selected):
+def create_hourly_graph(dff_filtered, color_map, server_average_df, metric_selected, highlighted_user):
     if not dff_filtered.empty:
         if metric_selected == 'characters':
             hourly_values = dff_filtered.groupby(["author_name", "hour_of_day"])['character_count'].sum().reset_index(name="value")
@@ -269,6 +306,14 @@ def create_hourly_graph(dff_filtered, color_map, server_average_df, metric_selec
             x=server_average_df["hour_of_day"], y=server_average_df["percentage"],
             mode='lines', name='Moyenne du Serveur', line=dict(color='#d62728', width=4),
         ))
+    
+    # --- HIGHLIGHT LOGIC ---
+    if highlighted_user:
+        for trace in fig.data:
+            if trace.name == highlighted_user:
+                trace.line.width = 4
+                trace.marker.size = 10
+
     return fig.update_layout(xaxis={"dtick": 1}, legend={"title": "Légende"})
 
 def create_leaderboard(dff, period, metric_name, date_format, metric_selected):
