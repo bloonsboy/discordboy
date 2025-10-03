@@ -34,8 +34,9 @@ def create_layout(df):
                     children=[
                         html.H5("Filters", className="card-title"),
                         html.Div(
-                            className="row g-3 align-items-end",
+                            className="row g-3",
                             children=[
+                                # --- Colonne 1: Top & Analyse ---
                                 html.Div(
                                     className="col-md-3",
                                     children=[
@@ -48,15 +49,32 @@ def create_layout(df):
                                             ],
                                             value=10, clearable=False,
                                         ),
+                                        html.Label("Analyze by :", className="form-label fw-bold mt-3"),
+                                        dbc.RadioItems(
+                                            id='metric-selector',
+                                            options=[
+                                                {'label': 'Message Count', 'value': 'messages'},
+                                                {'label': 'Character Count', 'value': 'characters'},
+                                            ],
+                                            value='messages',
+                                            inline=True,
+                                            labelClassName="me-3",
+                                            inputClassName="me-1",
+                                        ),
                                     ]
                                 ),
+                                # --- Colonne 2: Utilisateurs & Highlight ---
                                 html.Div(
                                     className="col-md-5",
                                     children=[
                                         html.Label("Users", className="form-label"),
                                         dcc.Dropdown(id="user-dropdown", multi=True),
+                                        
+                                        html.Label("Highlight User", className="form-label mt-3"),
+                                        dcc.Dropdown(id="highlight-user-dropdown", clearable=True, placeholder="Select a user to highlight..."),
                                     ]
                                 ),
+                                # --- Colonne 3: Période & Plage de dates ---
                                 html.Div(
                                     className="col-md-4",
                                     children=[
@@ -70,12 +88,7 @@ def create_layout(df):
                                             ],
                                             value="last_365", clearable=False,
                                         ),
-                                    ]
-                                ),
-                                html.Div(
-                                    className="col-md-8",
-                                    children=[
-                                        html.Label("Date Range", className="form-label"),
+                                        html.Label("Date Range", className="form-label mt-3"),
                                         dcc.DatePickerRange(
                                             id="date-picker-range",
                                             min_date_allowed=min_date, max_date_allowed=max_date,
@@ -85,25 +98,8 @@ def create_layout(df):
                                         html.Div(id="date-range-display", className="text-muted mt-2 small"),
                                     ]
                                 ),
-                                html.Div(
-                                    className="col-md-4",
-                                    children=[
-                                        html.Label("Analyze by :", className="form-label fw-bold"),
-                                        dbc.RadioItems(
-                                            id='metric-selector',
-                                            options=[
-                                                {'label': 'Message Count', 'value': 'messages'},
-                                                {'label': 'Character Count', 'value': 'characters'},
-                                            ],
-                                            value='messages',
-                                            inline=True,
-                                            labelClassName="me-3",
-                                            inputClassName="me-1",
-                                        )
-                                    ]
-                                )
-                            ],
-                        ),
+                            ]
+                        )
                     ]
                 )
             ),
@@ -113,11 +109,10 @@ def create_layout(df):
             html.Div(
                 className="row",
                 children=[
-                    # --- MODIFICATION ICI ---
                     html.Div(
                         className="col-lg-12 mb-4",
                         children=html.Div(
-                            className="card shadow-sm h-100",
+                            className="card shadow-sm",
                             children=[
                                 html.Div(
                                     className="card-header d-flex justify-content-between align-items-center",
@@ -139,7 +134,7 @@ def create_layout(df):
                                 html.Div(
                                     className="card-body",
                                     children=dcc.Loading(
-                                        dcc.Graph(id='evolution-graph', style={'height': '500px'}),
+                                        dcc.Graph(id='evolution-graph'),
                                         type="default"
                                     )
                                 ),
@@ -148,8 +143,29 @@ def create_layout(df):
                     ),
                     html.Div(className="col-lg-6 mb-4", children=create_graph_card("⏰ Hourly Distribution (%)", "hourly-graph")),
                     html.Div(className="col-lg-6 mb-4", children=create_graph_card("🗓️ Weekly Activity", "weekday-graph")),
-                    html.Div(className="col-lg-6 mb-4", children=create_leaderboard_card("🏆 Monthly Champions", "monthly-leaderboard-container")),
-                    html.Div(className="col-lg-6 mb-4", children=create_leaderboard_card("🥇 Daily Champions", "daily-leaderboard-container")),
+                    
+                    # Monthly Champions Card (inlined)
+                    html.Div(
+                        className="col-lg-6 mb-4",
+                        children=html.Div(
+                            className="card shadow-sm h-100",
+                            children=[
+                                html.Div(className="card-header", children=html.H5("🏆 Monthly Champions", className="card-title mb-0")),
+                                html.Div(className="card-body", children=dcc.Loading(html.Div(id="monthly-leaderboard-container"), type="default")),
+                            ]
+                        )
+                    ),
+                    # Daily Champions Card (inlined)
+                    html.Div(
+                        className="col-lg-6 mb-4",
+                        children=html.Div(
+                            className="card shadow-sm h-100",
+                            children=[
+                                html.Div(className="card-header", children=html.H5("🥇 Daily Champions", className="card-title mb-0")),
+                                html.Div(className="card-body", children=dcc.Loading(html.Div(id="daily-leaderboard-container"), type="default")),
+                            ]
+                        )
+                    ),
                 ],
             ),
         ],
@@ -163,13 +179,3 @@ def create_graph_card(title, graph_id):
             html.Div(className="card-body", children=dcc.Loading(dcc.Graph(id=graph_id, className="h-100"), type="default")),
         ]
     )
-
-def create_leaderboard_card(title, container_id):
-    return html.Div(
-        className="card shadow-sm h-100",
-        children=[
-            html.Div(className="card-header", children=html.H5(title, className="card-title mb-0")),
-            html.Div(className="card-body", children=dcc.Loading(html.Div(id=container_id), type="default")),
-        ]
-    )
-
