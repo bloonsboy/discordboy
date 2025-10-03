@@ -45,16 +45,24 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         return f"Durée : {years} an(s) et {days} jour(s)" if years > 0 else f"Durée : {delta.days} jours"
 
     @app.callback(
-        Output("cumulative-graph", "figure"), Output("monthly-graph", "figure"),
-        Output("hourly-graph", "figure"), Output("monthly-leaderboard-container", "children"),
-        Output("daily-leaderboard-container", "children"), Output("user-dropdown", "options"),
-        Output("user-dropdown", "value"), Output("dynamic-styles", "children"),
-        Output("weekday-graph", "figure"), Output("user-profile-card-container", "children"),
-        Input("user-dropdown", "value"), Input("date-picker-range", "start_date"),
-        Input("date-picker-range", "end_date"), Input("top-n-dropdown", "value"),
+        # --- CORRECTION DE LA LISTE DES SORTIES ---
+        Output("evolution-graph", "figure"), 
+        Output("hourly-graph", "figure"), 
+        Output("monthly-leaderboard-container", "children"),
+        Output("daily-leaderboard-container", "children"), 
+        Output("user-dropdown", "options"),
+        Output("user-dropdown", "value"), 
+        Output("dynamic-styles", "children"),
+        Output("weekday-graph", "figure"), 
+        Output("user-profile-card-container", "children"),
+        Input("user-dropdown", "value"), 
+        Input("date-picker-range", "start_date"),
+        Input("date-picker-range", "end_date"), 
+        Input("top-n-dropdown", "value"),
         Input("metric-selector", "value"),
+        Input("evolution-graph-selector", "value"),
     )
-    def update_all(selected_users, start_date, end_date, top_n, metric_selected):
+    def update_all(selected_users, start_date, end_date, top_n, metric_selected, evolution_view):
         ctx = dash.callback_context
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else "date-picker-range"
 
@@ -138,18 +146,21 @@ def register_callbacks(app, df, role_colors_map, current_member_ids):
         empty_leaderboard = html.P("No data available for this period.", className="text-center text-muted p-4")
 
         if dff_filtered.empty:
-            return empty_figure, empty_figure, create_hourly_graph(dff_filtered, {}, server_hourly_counts, metric_selected), empty_leaderboard, empty_leaderboard, user_options, user_value, final_styles, empty_figure, profile_card
+            return empty_figure, create_hourly_graph(dff_filtered, {}, server_hourly_counts, metric_selected), empty_leaderboard, empty_leaderboard, user_options, user_value, final_styles, empty_figure, profile_card
 
         color_map = {user: role_colors_map.get(str(user_id_map.get(user)), "#6c757d") for user in user_value}
         
-        fig_cumulative = create_cumulative_graph(dff_filtered, color_map, metric_selected)
-        fig_monthly = create_monthly_graph(dff_filtered, color_map, metric_selected)
+        if evolution_view == 'cumulative':
+            fig_evolution = create_cumulative_graph(dff_filtered, color_map, metric_selected)
+        else: # 'monthly'
+            fig_evolution = create_monthly_graph(dff_filtered, color_map, metric_selected)
+        
         fig_hourly = create_hourly_graph(dff_filtered, color_map, server_hourly_counts, metric_selected)
         monthly_leaderboard = create_leaderboard(dff_filtered, 'M', "Mois gagnés", "%B %Y", metric_selected)
         daily_leaderboard = create_leaderboard(dff_filtered, 'D', "Jours gagnés", "%d %B %Y", metric_selected)
         fig_weekday = create_weekday_graph(dff_filtered, metric_selected)
 
-        return fig_cumulative, fig_monthly, fig_hourly, monthly_leaderboard, daily_leaderboard, user_options, user_value, final_styles, fig_weekday, profile_card
+        return fig_evolution, fig_hourly, monthly_leaderboard, daily_leaderboard, user_options, user_value, final_styles, fig_weekday, profile_card
 
     def create_user_profile_card(user_name, dff, user_counts_period, metric_selected):
         user_df = dff[dff["author_name"] == user_name]
