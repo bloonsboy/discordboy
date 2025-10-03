@@ -1,0 +1,38 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f8f9fa;
+}
+
+.main-title {
+    color: #343a40;
+    font-weight: 700;
+}
+
+.card-header {
+    background-color: #ffffff;
+    font-weight: 600;
+    color: #495057;
+}
+
+.leaderboard-item:hover {
+    background-color: #f1f3f5;
+    cursor: help;
+}
+
+.leaderboard-rank {
+    font-weight: bold;
+    margin-right: 15px;
+    color: #6c757d;
+}
+
+.leaderboard-item .badge {
+    background-color: #cfe2ff !important;
+    color: #0d6efd !important;
+    font-size: 0.9em;
+}
+
+#filter-panel {
+    position: relative;
+    z-index: 10;
+}
+
