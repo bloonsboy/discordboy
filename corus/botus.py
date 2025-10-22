@@ -5,11 +5,15 @@ import json
 import logging
 import os
 import time
-
+from datetime import datetime
 import discord
 import pandas as pd
 
-from dataus.user import IDS_TO_EXCLUDE, ID_MERGE_MAP
+# ==============================================================================
+#  CONFIGURATION
+# ==============================================================================
+IDS_TO_EXCLUDE = [456226577798135808]
+# ==============================================================================
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -20,66 +24,125 @@ intents.members = True
 client = discord.Client(intents=intents)
 user_id_to_name_map = {}
 role_colors_map = {}
+member_data_map = {}  # Pour stocker les rôles et autres infos
 
 
-async def fetch_and_save_role_colors(guild, filename):
-    logging.info("Fetching role colors...")
-    global role_colors_map
-    await guild.chunk()
-    role_colors_map = {
-        str(member.id): str(member.color)
-        for member in guild.members
-        if not member.bot and str(member.color) != "#000000"
-    }
-    
-    with open(filename, "w") as f:
+async def fetch_server_data(guild, colors_filename):
+    """Récupère et sauvegarde les couleurs de rôle et les données des membres."""
+    global role_colors_map, member_data_map
+
+    logging.info(f"Récupération des données du serveur '{guild.name}'...")
+    logging.info(
+        "Cette opération (guild.chunk) peut prendre plusieurs minutes sur un gros serveur..."
+    )
+
+    start_chunk = time.time()
+    await guild.chunk(cache=True)  # Demande à Discord d'envoyer tous les membres
+    end_chunk = time.time()
+
+    logging.info(
+        f"Données des {len(guild.members)} membres récupérées en {end_chunk - start_chunk:.2f} secondes."
+    )
+
+    role_colors_map = {}
+    member_data_map = {}
+
+    for member in guild.members:
+        if member.bot:
+            continue
+
+        member_id_str = str(member.id)
+
+        # 1. Sauvegarder la couleur
+        if str(member.color) != "#000000":
+            role_colors_map[member_id_str] = str(member.color)
+
+        # 2. Sauvegarder les données du membre (rôles)
+        member_data_map[member_id_str] = {
+            "name": str(member),
+            "roles": [role.name for role in member.roles if role.name != "@everyone"],
+        }
+
+    with open(colors_filename, "w") as f:
         json.dump(role_colors_map, f, indent=4)
+    logging.info(f"Couleurs de rôle sauvegardées dans {colors_filename}.")
+
+    # Retourne les IDs des membres présents pour le filtrage
+    return set(int(mid) for mid in member_data_map.keys())
+
 
 async def fetch_channel_messages_as_df(channel, after_date=None):
+    """Récupère les messages d'un canal et les retourne sous forme de DataFrame."""
     messages = []
     if "mudae" in channel.name.lower() or "log" in channel.name.lower():
         return pd.DataFrame()
-    
-    log_message = f"[START] Fetching messages from #{channel.name}"
+
+    log_message = f"[DÉBUT] Récupération de #{channel.name}"
     if after_date:
-        log_message += f" (after {after_date.strftime('%Y-%m-%d %H:%M')})"
+        log_message += f" (après le {after_date.strftime('%Y-%m-%d %H:%M')})"
+    logging.info(log_message)
 
     start_time = time.time()
     count = 0
     try:
         async for message in channel.history(limit=None, after=after_date):
             if not message.author.bot:
-                messages.append({
-                    "timestamp": message.created_at,
-                    "author_id": message.author.id,
-                    "author_name": str(message.author),
-                    "channel_id": channel.id,
-                    "character_count": len(message.content.replace(' ', ''))
-                })
+                # Compter les caractères sans les espaces
+                char_count_no_spaces = len(message.content.replace(" ", ""))
+
+                messages.append(
+                    {
+                        "timestamp": message.created_at,
+                        "author_id": message.author.id,
+                        "author_name": str(message.author),
+                        "channel_id": channel.id,
+                        "character_count": char_count_no_spaces,  # Nouvelle donnée
+                    }
+                )
                 count += 1
-        
-        if count > 0:
-            logging.info(log_message)
-            end_time = time.time()
-            logging.info(f"[END] Fetched {count} messages from #{channel.name} in {end_time - start_time:.2f} seconds")
-        
+
+        end_time = time.time()
+        logging.info(
+            f"[FIN] Récupération de #{channel.name} terminée. {count} messages récupérés en {end_time - start_time:.2f} secondes."
+        )
+
         return pd.DataFrame(messages)
+    except discord.errors.Forbidden:
+        logging.warning(
+            f"[ACCÈS REFUSÉ] Impossible de lire l'historique de #{channel.name}."
+        )
+        return pd.DataFrame()
     except Exception as e:
-        logging.error(f"Error in #{channel.name}: {e}")
+        logging.error(f"Erreur dans #{channel.name}: {e}")
         return pd.DataFrame()
 
+
 async def fetch_messages_with_cache(guild, cache_filename):
+    """
+    Récupère les messages des canaux en utilisant un cache pour plus d'efficacité.
+    """
     global user_id_to_name_map
     df_cache = pd.DataFrame()
     latest_timestamps = {}
-    
+
     if os.path.exists(cache_filename):
+        logging.info(f"Chargement du cache depuis {cache_filename}...")
         df_cache = pd.read_parquet(cache_filename)
         df_cache["timestamp"] = pd.to_datetime(df_cache["timestamp"])
         if not df_cache.empty:
-            df_known_users = df_cache[df_cache["author_name"] != "Deleted User#0000"].drop_duplicates(subset=["author_id"], keep="last")
-            user_id_to_name_map = pd.Series(df_known_users.author_name.values, index=df_known_users.author_id).to_dict()
-            latest_timestamps = df_cache.loc[df_cache.groupby("channel_id")["timestamp"].idxmax()].set_index("channel_id")["timestamp"].to_dict()
+            df_known_users = df_cache[
+                df_cache["author_name"] != "Deleted User#0000"
+            ].drop_duplicates(subset=["author_id"], keep="last")
+            user_id_to_name_map = pd.Series(
+                df_known_users.author_name.values, index=df_known_users.author_id
+            ).to_dict()
+            latest_timestamps = (
+                df_cache.loc[df_cache.groupby("channel_id")["timestamp"].idxmax()]
+                .set_index("channel_id")["timestamp"]
+                .to_dict()
+            )
+    else:
+        logging.info("Aucun cache trouvé. Une analyse complète est nécessaire.")
 
     tasks = [
         asyncio.create_task(
@@ -88,71 +151,103 @@ async def fetch_messages_with_cache(guild, cache_filename):
         for c in guild.text_channels
         if c.permissions_for(guild.me).read_message_history
     ]
-    
+
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    new_dfs = [res for res in results if isinstance(res, pd.DataFrame) and not res.empty]
+    new_dfs = [
+        res for res in results if isinstance(res, pd.DataFrame) and not res.empty
+    ]
+
+    if not new_dfs:
+        logging.info("Aucun nouveau message à ajouter au cache.")
+        if df_cache.empty:
+            logging.error("Le cache est vide et aucun nouveau message n'a été trouvé.")
+            return pd.DataFrame()
+        # Si le cache n'est pas vide mais pas de nouveaux messages, on continue avec le cache
+        return df_cache.drop(columns=["channel_id"], errors="ignore")
+
     df_new = pd.concat(new_dfs, ignore_index=True) if new_dfs else pd.DataFrame()
 
     if not df_new.empty:
-        df_new_known = df_new[df_new["author_name"] != "Deleted User#0000"].drop_duplicates(subset=["author_id"], keep="last")
-        user_id_to_name_map.update(pd.Series(df_new_known.author_name.values, index=df_new_known.author_id).to_dict())
+        df_new_known = df_new[
+            df_new["author_name"] != "Deleted User#0000"
+        ].drop_duplicates(subset=["author_id"], keep="last")
+        user_id_to_name_map.update(
+            pd.Series(
+                df_new_known.author_name.values, index=df_new_known.author_id
+            ).to_dict()
+        )
 
-    final_df = pd.concat([df_cache, df_new], ignore_index=True).drop_duplicates(subset=['timestamp', 'author_id'])
+    final_df = pd.concat([df_cache, df_new], ignore_index=True)
+
+    # Assurer que 'character_count' existe, remplir les anciens messages avec 0
+    if "character_count" not in final_df.columns:
+        final_df["character_count"] = 0
+    else:
+        # Remplir les NaN (anciens messages) par 0
+        final_df["character_count"] = final_df["character_count"].fillna(0).astype(int)
+
     final_df = final_df[~final_df["author_id"].isin(IDS_TO_EXCLUDE)]
-    final_df.to_parquet(cache_filename)
+
+    # Sauvegarder avant le mappage des noms pour garder le cache propre
+    logging.info(f"Sauvegarde du cache mis à jour dans {cache_filename}...")
+    final_df.to_parquet(cache_filename, index=False)
+    logging.info("Sauvegarde terminée.")
 
     final_df["author_name"] = final_df["author_id"].map(user_id_to_name_map)
     unknown_mask = final_df["author_name"].isnull()
-    final_df.loc[unknown_mask, "author_name"] = "ID: " + final_df.loc[unknown_mask, "author_id"].astype(str)
-
-    if ID_MERGE_MAP:
-        for old_id, new_name in ID_MERGE_MAP.items():
-            final_df.loc[final_df["author_id"] == int(old_id), "author_name"] = new_name
+    final_df.loc[unknown_mask, "author_name"] = "ID: " + final_df.loc[
+        unknown_mask, "author_id"
+    ].astype(str)
 
     return final_df.drop(columns=["channel_id"], errors="ignore")
 
 
 async def run_bot(token, cache_filename, colors_filename):
-    global dashboard_df, user_id_to_name_map_global, role_colors_map_global, current_member_ids_global
+    """
+    Fonction principale pour exécuter le bot et lancer le processus.
+    """
+    global dashboard_df, role_colors_map_global, member_data_map_global
     dashboard_df = pd.DataFrame()
-    user_id_to_name_map_global = {}
     role_colors_map_global = {}
-    current_member_ids_global = []
+    member_data_map_global = {}
+    current_member_ids_global = set()
 
     on_ready_event = asyncio.Event()
 
     @client.event
     async def on_ready():
-        logging.info(f"Logged in as {client.user} (ID: {client.user.id})")
+        logging.info(f"{client.user} s'est connecté à Discord !")
         if not client.guilds:
-            logging.error("The bot is not on a server. Shutting down...")
+            logging.error("Le bot n'est pas sur un serveur. Fermeture...")
             await client.close()
             on_ready_event.set()
             return
-        
+
         guild = client.guilds[0]
         try:
-            logging.info("Fetching current member list...")
-            await guild.chunk()
-            current_members = [member.id for member in guild.members if not member.bot]
-            
-            await fetch_and_save_role_colors(guild, colors_filename)
-            main_df = await fetch_messages_with_cache(guild, cache_filename)
+            global role_colors_map_global, member_data_map_global, current_member_ids_global
 
-            global dashboard_df, user_id_to_name_map_global, role_colors_map_global, current_member_ids_global
-            dashboard_df = main_df
-            user_id_to_name_map_global = user_id_to_name_map
+            # 1. Récupérer les rôles, couleurs et la liste des membres actuels
+            current_member_ids_global = await fetch_server_data(guild, colors_filename)
             role_colors_map_global = role_colors_map
-            current_member_ids_global = current_members
+            member_data_map_global = member_data_map
+
+            # 2. Récupérer les messages
+            main_df = await fetch_messages_with_cache(guild, cache_filename)
+            logging.info("La collecte de données est terminée.")
+
+            global dashboard_df
+            dashboard_df = main_df
 
         except Exception as e:
-            logging.error(f"An error occurred during collection: {e}")
+            logging.error(
+                f"Une erreur est survenue pendant la collecte : {e}", exc_info=True
+            )
         finally:
             await client.close()
             on_ready_event.set()
 
     asyncio.create_task(client.start(token))
     await on_ready_event.wait()
-    
-    return dashboard_df, user_id_to_name_map_global, role_colors_map_global, current_member_ids_global
 
+    return dashboard_df, role_colors_map_global, member_data_map_global
