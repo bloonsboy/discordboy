@@ -2,7 +2,7 @@
 
 from dash import dcc, html
 import dash_bootstrap_components as dbc
-from datetime import datetime, timedelta  # <--- CORRECTION: timedelta ajouté
+from datetime import datetime, timedelta
 import pandas as pd
 
 
@@ -17,7 +17,7 @@ def create_layout(df):
         style={"fontFamily": "Inter, sans-serif"},
         children=[
             dcc.Markdown(id="dynamic-styles", style={"display": "none"}),
-            # --- En-tête ---
+            # --- Header ---
             html.Header(
                 className="bg-white shadow-sm mb-4",
                 children=html.Div(
@@ -27,26 +27,29 @@ def create_layout(df):
                             className="fab fa-discord me-3",
                             style={"fontSize": "2rem", "color": "#5865F2"},
                         ),
-                        html.H1("Dashboard d'Activité Discord", className="h3 mb-0"),
+                        html.H1("Discord Activity Dashboard", className="h3 mb-0"),
                     ],
                 ),
             ),
-            # --- Panneau des Filtres ---
+            # --- Filters Panel ---
             html.Div(
                 id="filter-panel",
                 className="card shadow-sm mb-4",
                 children=html.Div(
                     className="card-body",
                     children=[
-                        html.H5("Filtres", className="card-title"),
+                        html.H5("Filters", className="card-title mb-4"),
                         html.Div(
-                            className="row g-3",
+                            className="row g-4",
                             children=[
-                                # --- Colonne 1: Top & Analyse ---
+                                # --- Column 1: Selection ---
                                 html.Div(
-                                    className="col-md-3",
+                                    className="col-md-5",
                                     children=[
-                                        html.Label("Top Users", className="form-label"),
+                                        html.H6("Selection", className="text-muted"),
+                                        html.Label(
+                                            "Top Users", className="form-label small"
+                                        ),
                                         dcc.Dropdown(
                                             id="top-n-dropdown",
                                             options=[
@@ -60,66 +63,42 @@ def create_layout(df):
                                             clearable=False,
                                         ),
                                         html.Label(
-                                            "Analyser par :",
-                                            className="form-label fw-bold mt-3",
-                                        ),
-                                        dbc.RadioItems(
-                                            id="metric-selector",
-                                            options=[
-                                                {
-                                                    "label": "Nb. Messages",
-                                                    "value": "messages",
-                                                },
-                                                {
-                                                    "label": "Nb. Caractères",
-                                                    "value": "characters",
-                                                },
-                                            ],
-                                            value="messages",
-                                            inline=True,
-                                            labelClassName="me-3",
-                                            inputClassName="me-1",
-                                        ),
-                                    ],
-                                ),
-                                # --- Colonne 2: Sélection des Utilisateurs ---
-                                html.Div(
-                                    className="col-md-5",
-                                    children=[
-                                        html.Label(
-                                            "Utilisateurs", className="form-label"
+                                            "Users", className="form-label small mt-3"
                                         ),
                                         dcc.Dropdown(id="user-dropdown", multi=True),
                                         html.Label(
                                             "Highlight User",
-                                            className="form-label mt-3",
+                                            className="form-label small mt-3",
                                         ),
                                         dcc.Dropdown(
                                             id="highlight-user-dropdown",
                                             clearable=True,
-                                            placeholder="Sélectionner un utilisateur...",
+                                            placeholder="Select a user to highlight...",
                                         ),
                                     ],
                                 ),
-                                # --- Colonne 3: Période & Filtres de Rôle ---
+                                # --- Column 2: Time ---
                                 html.Div(
                                     className="col-md-4",
                                     children=[
-                                        html.Label("Période", className="form-label"),
+                                        html.H6("Time", className="text-muted"),
+                                        html.Label(
+                                            "Period", className="form-label small"
+                                        ),
                                         dcc.Dropdown(
                                             id="date-range-dropdown",
                                             options=[
                                                 {"label": "Custom", "value": "custom"},
                                                 {
-                                                    "label": "Année en cours",
+                                                    "label": "Current Year",
                                                     "value": "current_year",
                                                 },
                                                 {
-                                                    "label": "Derniers 365 jours",
+                                                    "label": "Last 365 Days",
                                                     "value": "last_365",
                                                 },
                                                 {
-                                                    "label": "6 derniers mois",
+                                                    "label": "Last 6 Months",
                                                     "value": "last_6_months",
                                                 },
                                                 {
@@ -130,7 +109,10 @@ def create_layout(df):
                                             value="last_365",
                                             clearable=False,
                                         ),
-                                        html.Label("Date", className="form-label mt-3"),
+                                        html.Label(
+                                            "Date Range",
+                                            className="form-label small mt-3",
+                                        ),
                                         dcc.DatePickerRange(
                                             id="date-picker-range",
                                             min_date_allowed=min_date,
@@ -146,14 +128,40 @@ def create_layout(df):
                                             id="date-range-display",
                                             className="text-muted mt-2 small",
                                         ),
+                                    ],
+                                ),
+                                # --- Column 3: Analysis ---
+                                html.Div(
+                                    className="col-md-3",
+                                    children=[
+                                        html.H6("Analysis", className="text-muted"),
                                         html.Label(
-                                            "Filtre Spécial",
-                                            className="form-label fw-bold mt-3",
+                                            "Analyze by:", className="form-label small"
+                                        ),
+                                        dbc.RadioItems(
+                                            id="metric-selector",
+                                            options=[
+                                                {
+                                                    "label": "Message Count",
+                                                    "value": "messages",
+                                                },
+                                                {
+                                                    "label": "Character Count",
+                                                    "value": "characters",
+                                                },
+                                            ],
+                                            value="messages",
+                                            labelClassName="me-3",
+                                            inputClassName="me-1",
+                                        ),
+                                        html.Label(
+                                            "Special Filter",
+                                            className="form-label small fw-bold mt-4",
                                         ),
                                         dbc.Checklist(
                                             options=[
                                                 {
-                                                    "label": "Afficher uniquement 'Virgule du 4'",
+                                                    "label": "Show 'Virgule du 4' Only",
                                                     "value": 1,
                                                 },
                                             ],
@@ -168,29 +176,24 @@ def create_layout(df):
                     ],
                 ),
             ),
-            # --- Carte de Profil (si highlight) ---
             html.Div(id="user-profile-card-container"),
-            # --- Rubrique 1: Analyse Temporelle ---
-            html.H2("Analyse Temporelle", className="h4 mt-5 mb-3"),
+            # --- Section 1: Temporal Analysis ---
+            html.H2("Temporal Analysis", className="h4 mt-5 mb-3"),
             html.Div(
                 className="card shadow-sm mb-4",
                 children=[
                     html.Div(
                         className="card-header d-flex justify-content-between align-items-center",
                         children=[
-                            html.H5(
-                                "Évolution de l'activité", className="card-title mb-0"
-                            ),
-                            dbc.RadioItems(
+                            html.H5("Activity Evolution", className="card-title mb-0"),
+                            dcc.Slider(
                                 id="evolution-graph-selector",
-                                options=[
-                                    {"label": "Vue Cumulée", "value": "cumulative"},
-                                    {"label": "Vue Mensuelle", "value": "monthly"},
-                                ],
-                                value="cumulative",
-                                inline=True,
-                                labelClassName="me-3",
-                                inputClassName="me-1",
+                                min=0,
+                                max=1,
+                                value=0,
+                                marks={0: "Cumulative", 1: "Monthly"},
+                                step=None,
+                                className="w-25",
                             ),
                         ],
                     ),
@@ -203,41 +206,13 @@ def create_layout(df):
                     ),
                 ],
             ),
-            # --- Rubrique 2: Analyse des Messages ---
-            html.H2("Analyse des Messages", className="h4 mt-5 mb-3"),
+            # --- Section 2: Message Analysis ---
+            html.H2("Message Analysis", className="h4 mt-5 mb-3"),
             html.Div(
                 className="row",
                 children=[
-                    # Graphique de Longueur Médiane
                     html.Div(
-                        className="col-lg-6 mb-4",
-                        children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
-                                children=[
-                                    html.Div(
-                                        className="card-header",
-                                        children=html.H5(
-                                            "Longueur Médiane des Messages",
-                                            className="card-title mb-0",
-                                        ),
-                                    ),
-                                    html.Div(
-                                        className="card-body",
-                                        children=dcc.Loading(
-                                            dcc.Graph(
-                                                id="median-length-graph",
-                                                style={"height": "500px"},
-                                            )
-                                        ),
-                                    ),
-                                ],
-                            )
-                        ],
-                    ),
-                    # Graphique de Distribution (Heure/Jour/Mois/Année)
-                    html.Div(
-                        className="col-lg-6 mb-4",
+                        className="col-lg-12 mb-4",
                         children=[
                             html.Div(
                                 className="card shadow-sm h-100",
@@ -246,19 +221,22 @@ def create_layout(df):
                                         className="card-header d-flex justify-content-between align-items-center",
                                         children=[
                                             html.H5(
-                                                "Distribution (Top 5 vs Serveur)",
+                                                "Distribution (Top 3 vs Server)",
                                                 className="card-title mb-0",
                                             ),
                                             dbc.RadioItems(
                                                 id="distribution-time-unit",
                                                 options=[
-                                                    {"label": "Heure", "value": "hour"},
+                                                    {"label": "Hour", "value": "hour"},
                                                     {
-                                                        "label": "Jour",
+                                                        "label": "Day",
                                                         "value": "weekday",
                                                     },
-                                                    {"label": "Mois", "value": "month"},
-                                                    {"label": "Année", "value": "year"},
+                                                    {
+                                                        "label": "Month",
+                                                        "value": "month",
+                                                    },
+                                                    {"label": "Year", "value": "year"},
                                                 ],
                                                 value="hour",
                                                 inline=True,
@@ -282,12 +260,68 @@ def create_layout(df):
                     ),
                 ],
             ),
-            # --- Rubrique 3: Classements ---
-            html.H2("Classements", className="h4 mt-5 mb-3"),
             html.Div(
                 className="row",
                 children=[
-                    # Classements par Messages
+                    html.Div(
+                        className="col-lg-6 mb-4",
+                        children=[
+                            html.Div(
+                                className="card shadow-sm h-100",
+                                children=[
+                                    html.Div(
+                                        className="card-header",
+                                        children=html.H5(
+                                            "Median Message Length",
+                                            className="card-title mb-0",
+                                        ),
+                                    ),
+                                    html.Div(
+                                        className="card-body",
+                                        children=dcc.Loading(
+                                            dcc.Graph(
+                                                id="median-length-graph",
+                                                style={"height": "500px"},
+                                            )
+                                        ),
+                                    ),
+                                ],
+                            )
+                        ],
+                    ),
+                    html.Div(
+                        className="col-lg-6 mb-4",
+                        children=[
+                            html.Div(
+                                className="card shadow-sm h-100",
+                                children=[
+                                    html.Div(
+                                        className="card-header",
+                                        children=html.H5(
+                                            "Activity Heatmap (Day/Hour)",
+                                            className="card-title mb-0",
+                                        ),
+                                    ),
+                                    html.Div(
+                                        className="card-body",
+                                        children=dcc.Loading(
+                                            dcc.Graph(
+                                                id="activity-heatmap",
+                                                style={"height": "500px"},
+                                            )
+                                        ),
+                                    ),
+                                ],
+                            )
+                        ],
+                    ),
+                ],
+            ),
+            # --- Section 3: Leaderboards ---
+            html.H2("Leaderboards", className="h4 mt-5 mb-3"),
+            html.Div(
+                className="row",
+                children=[
                     html.Div(
                         className="col-lg-6 mb-4",
                         children=[
@@ -297,7 +331,7 @@ def create_layout(df):
                                     html.Div(
                                         className="card-header bg-primary text-white",
                                         children=html.H5(
-                                            "Champions par Nb. de Messages",
+                                            "Champions by Message Count",
                                             className="card-title mb-0",
                                         ),
                                     ),
@@ -305,14 +339,14 @@ def create_layout(df):
                                         className="card-body p-0",
                                         children=[
                                             html.H6(
-                                                "🏆 Champions Mensuels",
+                                                "🏆 Monthly Champions",
                                                 className="px-3 pt-3",
                                             ),
                                             dcc.Loading(
                                                 html.Div(id="monthly-leaderboard-msg")
                                             ),
                                             html.H6(
-                                                "🥇 Champions Journaliers",
+                                                "🥇 Daily Champions",
                                                 className="px-3 pt-3",
                                             ),
                                             dcc.Loading(
@@ -324,7 +358,6 @@ def create_layout(df):
                             )
                         ],
                     ),
-                    # Classements par Caractères
                     html.Div(
                         className="col-lg-6 mb-4",
                         children=[
@@ -334,7 +367,7 @@ def create_layout(df):
                                     html.Div(
                                         className="card-header bg-success text-white",
                                         children=html.H5(
-                                            "Champions par Nb. de Caractères",
+                                            "Champions by Character Count",
                                             className="card-title mb-0",
                                         ),
                                     ),
@@ -342,14 +375,14 @@ def create_layout(df):
                                         className="card-body p-0",
                                         children=[
                                             html.H6(
-                                                "🏆 Champions Mensuels",
+                                                "🏆 Monthly Champions",
                                                 className="px-3 pt-3",
                                             ),
                                             dcc.Loading(
                                                 html.Div(id="monthly-leaderboard-char")
                                             ),
                                             html.H6(
-                                                "🥇 Champions Journaliers",
+                                                "🥇 Daily Champions",
                                                 className="px-3 pt-3",
                                             ),
                                             dcc.Loading(
