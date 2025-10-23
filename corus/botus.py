@@ -75,12 +75,12 @@ async def fetch_channel_messages_as_df(channel, after_date=None):
     """Récupère les messages d'un canal et les retourne sous forme de DataFrame."""
     messages = []
     if "mudae" in channel.name.lower() or "log" in channel.name.lower():
-        return pd.DataFrame()
+        return pd.DataFrame(), 0  # Retourne un tuple (DataFrame, count)
 
-    log_message = f"[DÉBUT] Récupération de #{channel.name}"
+    log_message = f"[INFO] Vérification de #{channel.name}"
     if after_date:
         log_message += f" (après le {after_date.strftime('%Y-%m-%d %H:%M')})"
-    logging.info(log_message)
+    # Ne pas logger le début pour l'instant
 
     start_time = time.time()
     count = 0
@@ -102,19 +102,21 @@ async def fetch_channel_messages_as_df(channel, after_date=None):
                 count += 1
 
         end_time = time.time()
-        logging.info(
-            f"[FIN] Récupération de #{channel.name} terminée. {count} messages récupérés en {end_time - start_time:.2f} secondes."
-        )
 
-        return pd.DataFrame(messages)
+        # --- CORRECTION ---
+        # N'afficher le log que s'il y a eu de nouveaux messages
+        if count > 0:
+            logging.info(
+                f"[MISE À JOUR] #{channel.name}: {count} nouveaux messages récupérés en {end_time - start_time:.2f} secondes."
+            )
+
+        return pd.DataFrame(messages), count  # Retourne le count
     except discord.errors.Forbidden:
-        logging.warning(
-            f"[ACCÈS REFUSÉ] Impossible de lire l'historique de #{channel.name}."
-        )
-        return pd.DataFrame()
+        # logging.warning(f"[ACCÈS REFUSÉ] Impossible de lire l'historique de #{channel.name}.")
+        return pd.DataFrame(), 0
     except Exception as e:
         logging.error(f"Erreur dans #{channel.name}: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), 0
 
 
 async def fetch_messages_with_cache(guild, cache_filename):
@@ -153,18 +155,28 @@ async def fetch_messages_with_cache(guild, cache_filename):
     ]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    new_dfs = [
-        res for res in results if isinstance(res, pd.DataFrame) and not res.empty
-    ]
+
+    new_dfs = []
+    total_new_messages = 0
+    for res in results:
+        if isinstance(res, tuple):
+            df_res, count_res = res
+            if not df_res.empty:
+                new_dfs.append(df_res)
+            total_new_messages += count_res
+        elif isinstance(res, Exception):
+            logging.error(f"Une tâche de fetch a échoué : {res}")
 
     if not new_dfs:
         logging.info("Aucun nouveau message à ajouter au cache.")
         if df_cache.empty:
             logging.error("Le cache est vide et aucun nouveau message n'a été trouvé.")
             return pd.DataFrame()
-        # Si le cache n'est pas vide mais pas de nouveaux messages, on continue avec le cache
         return df_cache.drop(columns=["channel_id"], errors="ignore")
 
+    logging.info(
+        f"Total de {total_new_messages} nouveaux messages trouvés sur l'ensemble des salons."
+    )
     df_new = pd.concat(new_dfs, ignore_index=True) if new_dfs else pd.DataFrame()
 
     if not df_new.empty:
@@ -179,16 +191,13 @@ async def fetch_messages_with_cache(guild, cache_filename):
 
     final_df = pd.concat([df_cache, df_new], ignore_index=True)
 
-    # Assurer que 'character_count' existe, remplir les anciens messages avec 0
     if "character_count" not in final_df.columns:
         final_df["character_count"] = 0
     else:
-        # Remplir les NaN (anciens messages) par 0
         final_df["character_count"] = final_df["character_count"].fillna(0).astype(int)
 
     final_df = final_df[~final_df["author_id"].isin(IDS_TO_EXCLUDE)]
 
-    # Sauvegarder avant le mappage des noms pour garder le cache propre
     logging.info(f"Sauvegarde du cache mis à jour dans {cache_filename}...")
     final_df.to_parquet(cache_filename, index=False)
     logging.info("Sauvegarde terminée.")
@@ -210,7 +219,6 @@ async def run_bot(token, cache_filename, colors_filename):
     dashboard_df = pd.DataFrame()
     role_colors_map_global = {}
     member_data_map_global = {}
-    current_member_ids_global = set()
 
     on_ready_event = asyncio.Event()
 
@@ -225,10 +233,10 @@ async def run_bot(token, cache_filename, colors_filename):
 
         guild = client.guilds[0]
         try:
-            global role_colors_map_global, member_data_map_global, current_member_ids_global
+            global role_colors_map_global, member_data_map_global
 
             # 1. Récupérer les rôles, couleurs et la liste des membres actuels
-            current_member_ids_global = await fetch_server_data(guild, colors_filename)
+            await fetch_server_data(guild, colors_filename)
             role_colors_map_global = role_colors_map
             member_data_map_global = member_data_map
 
@@ -251,3 +259,4 @@ async def run_bot(token, cache_filename, colors_filename):
     await on_ready_event.wait()
 
     return dashboard_df, role_colors_map_global, member_data_map_global
+    
