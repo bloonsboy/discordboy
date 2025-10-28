@@ -8,11 +8,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import re  # For mention parsing in content (fallback)
 
 
 def register_callbacks(app, df, role_colors_map, member_data):
 
-    # --- Dictionaries for translation and ordering ---
+    # --- Dictionaries & Sets ---
     days_order = [
         "Monday",
         "Tuesday",
@@ -22,7 +23,6 @@ def register_callbacks(app, df, role_colors_map, member_data):
         "Saturday",
         "Sunday",
     ]
-    # We keep the French map for profile card display, as it's a specific display logic
     days_fr = {
         "Monday": "Lundi",
         "Tuesday": "Mardi",
@@ -47,30 +47,49 @@ def register_callbacks(app, df, role_colors_map, member_data):
         "December",
     ]
 
-    # --- Helpers ---
-    def is_light_color(hex_color):
-        hex_color = hex_color.lstrip("#")
-        rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
-        luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
-        return luminance > 0.5
+    # Pre-calculate maps and sets for efficiency
+    # Ensure df is not empty before trying to create maps
+    if not df.empty:
+        user_id_to_name_map = (
+            df.drop_duplicates(subset=["author_id"])
+            .set_index("author_id")["author_name"]
+            .to_dict()
+        )
+        name_to_user_id_map = {
+            v: k for k, v in user_id_to_name_map.items()
+        }  # Reverse map
+    else:
+        user_id_to_name_map = {}
+        name_to_user_id_map = {}
 
-    # Pre-calculate "Virgule" member IDs
     virgule_role_name = "Virgule du 4'"
     virgule_member_ids = {
         int(user_id)
         for user_id, data in member_data.items()
         if virgule_role_name in data.get("roles", [])
     }
-    user_id_to_name_map = (
-        df.drop_duplicates(subset=["author_id"])
-        .set_index("author_id")["author_name"]
-        .to_dict()
-    )
     virgule_author_names = {
         user_id_to_name_map[uid]
         for uid in virgule_member_ids
         if uid in user_id_to_name_map
     }
+    current_member_ids_int = {
+        int(id) for id in member_data.keys()
+    }  # Set of current member IDs
+
+    # --- Helpers ---
+    def is_light_color(hex_color):
+        try:  # Add error handling for invalid hex codes
+            if not isinstance(hex_color, str):
+                return True  # Default to light if not a string
+            hex_color = hex_color.lstrip("#")
+            if len(hex_color) != 6:
+                return True  # Default to light if invalid length
+            rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+            luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+            return luminance > 0.5
+        except:
+            return True  # Default to light on any parsing error
 
     # --- Main Callback ---
     @app.callback(
@@ -90,7 +109,8 @@ def register_callbacks(app, df, role_colors_map, member_data):
         Output("daily-leaderboard-msg", "children"),
         Output("monthly-leaderboard-char", "children"),
         Output("daily-leaderboard-char", "children"),
-        Output("activity-heatmap", "figure"),
+        Output("mentioned-users-graph", "figure"),  # New graph
+        Output("top-reacted-messages", "children"),  # New component
         Input("user-dropdown", "value"),
         Input("date-picker-range", "start_date"),
         Input("date-picker-range", "end_date"),
@@ -142,7 +162,10 @@ def register_callbacks(app, df, role_colors_map, member_data):
         elif triggered_id == "date-range-dropdown":
             today = datetime.now()
             if date_range_period == "all-time":
-                output_start_date, output_end_date = min_date_allowed, max_date_allowed
+                # --- FIX 1: Use the global 'df' to get true min/max ---
+                output_start_date = df["timestamp"].min().date()
+                output_end_date = df["timestamp"].max().date()
+                # --- End Fix ---
             elif date_range_period == "current_year":
                 output_start_date, output_end_date = (
                     today.replace(month=1, day=1).date(),
@@ -173,28 +196,40 @@ def register_callbacks(app, df, role_colors_map, member_data):
             & (df_filtered_by_role["timestamp"] <= end_date_utc)
         ].copy()
 
-        dff["month_year"] = (
-            dff["timestamp"].dt.tz_convert("Europe/Paris").dt.to_period("M").astype(str)
-        )
-        dff["hour_of_day"] = dff["timestamp"].dt.tz_convert("Europe/Paris").dt.hour
-        dff["weekday"] = dff["timestamp"].dt.day_name()
-        dff["month_name"] = dff["timestamp"].dt.month_name()
-        dff["year"] = dff["timestamp"].dt.year
+        # Add time columns if dff is not empty
+        if not dff.empty:
+            dff["month_year"] = (
+                dff["timestamp"]
+                .dt.tz_convert("Europe/Paris")
+                .dt.to_period("M")
+                .astype(str)
+            )
+            dff["hour_of_day"] = dff["timestamp"].dt.tz_convert("Europe/Paris").dt.hour
+            dff["weekday"] = dff["timestamp"].dt.day_name()
+            dff["month_name"] = dff["timestamp"].dt.month_name()
+            dff["year"] = dff["timestamp"].dt.year
+        else:
+            # Add empty columns if dff is empty to prevent errors later
+            for col in ["month_year", "hour_of_day", "weekday", "month_name", "year"]:
+                dff[col] = pd.NA
 
         # --- 3. User List Preparation ---
-        if metric_selected == "characters":
+        if metric_selected == "characters" and not dff.empty:
             user_counts_period = (
                 dff.groupby("author_name")["character_count"]
                 .sum()
                 .sort_values(ascending=False)
             )
-        else:
+        elif not dff.empty:
             user_counts_period = dff["author_name"].value_counts()
+        else:
+            user_counts_period = pd.Series(dtype="int64")  # Empty series if no data
 
         user_counts_all_time = df_filtered_by_role["author_name"].value_counts()
         sorted_users_by_count = user_counts_all_time.index.tolist()
 
         user_value = selected_users
+        # Handle initial load or filter change for Top N
         if (
             triggered_id
             in [
@@ -206,8 +241,19 @@ def register_callbacks(app, df, role_colors_map, member_data):
             ]
             or triggered_id is None
         ):
-            if top_n != "custom":
-                user_value = user_counts_period.nlargest(int(top_n)).index.tolist()
+            if top_n != "custom" and not user_counts_period.empty:
+                # Ensure top_n is an integer if possible
+                try:
+                    n = int(top_n)
+                    user_value = user_counts_period.nlargest(n).index.tolist()
+                except ValueError:
+                    pass
+            elif top_n != "custom" and user_counts_period.empty:
+                user_value = []  # No users if no data in period
+
+        # Fallback for selected_users if they become empty somehow
+        if user_value is None:
+            user_value = []
 
         user_id_map_full = (
             df.drop_duplicates(subset=["author_name"])
@@ -219,7 +265,6 @@ def register_callbacks(app, df, role_colors_map, member_data):
             .set_index("author_name")["original_author_name"]
             .to_dict()
         )
-        current_member_ids_int = {int(id) for id in member_data.keys()}
 
         user_options = [
             {
@@ -233,7 +278,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
                                     if user_id_map_full.get(user)
                                     not in current_member_ids_int
                                     else role_colors_map.get(
-                                        str(user_id_map_full.get(user)), "#6c7s7d"
+                                        str(user_id_map_full.get(user)), "#6c757d"
                                     )
                                 ),
                                 "textDecoration": (
@@ -248,7 +293,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
                         html.Span(
                             name_to_original_map.get(user, user),
                             style={"display": "none"},
-                        ),
+                        ),  # Hidden original name for search
                     ]
                 ),
                 "value": user,
@@ -261,7 +306,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
         # --- 4. Common Data Prep (Colors, Styles, Profile) ---
         style_rules = []
         for user in user_value:
-            safe_user = user.replace('"', '\\"')
+            safe_user = str(user).replace('"', '\\"')
             user_id = user_id_map_full.get(user, "")
             is_member = user_id in current_member_ids_int
 
@@ -276,11 +321,11 @@ def register_callbacks(app, df, role_colors_map, member_data):
             decoration = "none" if is_member else "line-through"
 
             rule = f""".Select-value[title="{safe_user}"] {{
-                background-color: {bg_color} !important;
-                color: {text_color} !important;
-                border-radius: 4px;
-                text-decoration: {decoration};
-            }}"""
+                 background-color: {bg_color} !important;
+                 color: {text_color} !important;
+                 border-radius: 4px;
+                 text-decoration: {decoration};
+             }}"""
             style_rules.append(rule)
         final_styles = f"<style>{''.join(style_rules)}</style>"
 
@@ -306,8 +351,12 @@ def register_callbacks(app, df, role_colors_map, member_data):
         empty_leaderboard = html.P(
             "No data available for this period.", className="text-center text-muted p-4"
         )
+        empty_list_component = html.Div(
+            "No data available for this period.", className="text-center text-muted p-4"
+        )
 
         if dff.empty:
+            # Return empty states for all outputs
             return (
                 empty_figure,
                 user_options,
@@ -326,6 +375,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
                 empty_leaderboard,
                 empty_leaderboard,
                 empty_figure,
+                empty_list_component,
             )
 
         # --- 6. Graph & Leaderboard Creation ---
@@ -350,7 +400,10 @@ def register_callbacks(app, df, role_colors_map, member_data):
             dist_time_unit,
             metric_selected,
         )
-        fig_heatmap = create_activity_heatmap(dff, metric_selected)
+        fig_mentioned = create_most_mentioned_graph(dff, user_id_to_name_map, color_map)
+        top_reactions_component = create_top_reactions_list(
+            dff, user_id_map_full, role_colors_map, current_member_ids_int
+        )
 
         # Section 3: Leaderboards
         monthly_leaderboard_msg = create_leaderboard(
@@ -383,7 +436,8 @@ def register_callbacks(app, df, role_colors_map, member_data):
             daily_leaderboard_msg,
             monthly_leaderboard_char,
             daily_leaderboard_char,
-            fig_heatmap,
+            fig_mentioned,
+            top_reactions_component,
         )
 
     # --- Graphing Functions ---
@@ -405,8 +459,16 @@ def register_callbacks(app, df, role_colors_map, member_data):
         percent_server = (
             (total_val / total_server_val) * 100 if total_server_val > 0 else 0
         )
-        fav_hour = user_df["hour_of_day"].mode()[0]
-        fav_day = user_df["weekday"].mode()[0]
+        fav_hour = (
+            user_df["hour_of_day"].mode()[0]
+            if not user_df["hour_of_day"].mode().empty
+            else "N/A"
+        )
+        fav_day = (
+            user_df["weekday"].mode()[0]
+            if not user_df["weekday"].mode().empty
+            else "N/A"
+        )
         rank = (
             user_counts_period.index.get_loc(user_name) + 1
             if user_name in user_counts_period.index
@@ -437,7 +499,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
                                 className="list-group-item",
                             ),
                             html.Li(
-                                f"🕒 Peak Hour: {fav_hour}:00 - {fav_hour+1}:00",
+                                f"🕒 Peak Hour: {fav_hour}:00 - {int(fav_hour)+1 if fav_hour != 'N/A' else 'N/A'}:00",
                                 className="list-group-item",
                             ),
                             html.Li(
@@ -497,10 +559,14 @@ def register_callbacks(app, df, role_colors_map, member_data):
         ).update_layout(legend={"title": "Users"}, height=600)
 
         for trace in fig.data:
-            if trace.name in period_totals:
-                total_val = period_totals[trace.name]
-                trace.name = f"{trace.name} ({total_val:,.0f})".replace(",", " ")
-            if trace.name.startswith(str(highlighted_user)):
+            trace_name_no_count = trace.name.split(" (")[0]
+            if trace_name_no_count in period_totals:
+                total_val = period_totals[trace_name_no_count]
+                if "(" not in trace.name:
+                    trace.name = f"{trace_name_no_count} ({total_val:,.0f})".replace(
+                        ",", " "
+                    )
+            if trace_name_no_count == highlighted_user:
                 trace.line.width = 4
 
         return fig
@@ -555,10 +621,14 @@ def register_callbacks(app, df, role_colors_map, member_data):
         )
 
         for trace in fig.data:
-            if trace.name in period_totals:
-                total_val = period_totals[trace.name]
-                trace.name = f"{trace.name} ({total_val:,.0f})".replace(",", " ")
-            if trace.name.startswith(str(highlighted_user)):
+            trace_name_no_count = trace.name.split(" (")[0]
+            if trace_name_no_count in period_totals:
+                total_val = period_totals[trace_name_no_count]
+                if "(" not in trace.name:
+                    trace.name = f"{trace_name_no_count} ({total_val:,.0f})".replace(
+                        ",", " "
+                    )
+            if trace_name_no_count == highlighted_user:
                 trace.line.width = 4
                 trace.marker.size = 10
 
@@ -575,12 +645,34 @@ def register_callbacks(app, df, role_colors_map, member_data):
                 }
             )
 
+        dff_filtered["character_count"] = pd.to_numeric(
+            dff_filtered["character_count"], errors="coerce"
+        )
+        dff["character_count"] = pd.to_numeric(dff["character_count"], errors="coerce")
+
         median_lengths = (
-            dff_filtered.groupby("author_name")["character_count"]
+            dff_filtered.dropna(subset=["character_count"])
+            .groupby("author_name")["character_count"]
             .median()
             .sort_values(ascending=True)
         )
-        server_median = dff["character_count"].median()
+        server_median = dff.dropna(subset=["character_count"])[
+            "character_count"
+        ].median()
+
+        if median_lengths.empty:
+            return go.Figure(
+                layout={
+                    "template": "plotly_white",
+                    "annotations": [
+                        {
+                            "text": "No valid message length data for selected users",
+                            "showarrow": False,
+                        }
+                    ],
+                }
+            )
+
         colors = [color_map.get(name, "#6c757d") for name in median_lengths.index]
 
         fig = go.Figure()
@@ -594,39 +686,40 @@ def register_callbacks(app, df, role_colors_map, member_data):
             )
         )
 
-        fig.add_shape(
-            type="line",
-            x0=server_median,
-            x1=server_median,
-            y0=-0.5,
-            y1=len(median_lengths) - 0.5,
-            line=dict(color="red", width=3, dash="dash"),
-            name="Server Median",
-        )
+        if pd.notna(server_median):
+            fig.add_shape(
+                type="line",
+                x0=server_median,
+                x1=server_median,
+                y0=-0.5,
+                y1=len(median_lengths) - 0.5,
+                line=dict(color="red", width=3, dash="dash"),
+                name="Server Median",
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[None],
+                    y=[None],
+                    mode="lines",
+                    line=dict(color="red", width=3, dash="dash"),
+                    name="Server Median",
+                )
+            )
 
         fig.update_layout(
-            xaxis_title="Median Characters",
+            xaxis_title="Median Characters per Message",
             yaxis_title="User",
             template="plotly_white",
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
             ),
         )
-
-        fig.add_trace(
-            go.Scatter(
-                x=[None],
-                y=[None],
-                mode="lines",
-                line=dict(color="red", width=3, dash="dash"),
-                name="Server Median",
-            )
-        )
         return fig
 
     def create_distribution_graph(
         dff_filtered, dff, user_counts_period, color_map, time_unit, metric_selected
     ):
+        # --- THIS IS THE CORRECTED VERSION ---
         top_users = user_counts_period.nlargest(3).index.tolist()
         dff_top = dff_filtered[dff_filtered["author_name"].isin(top_users)]
 
@@ -641,31 +734,24 @@ def register_callbacks(app, df, role_colors_map, member_data):
         if time_unit == "hour":
             x_col, x_label = "hour_of_day", "Hour of Day"
             categories = list(range(24))
-            dff_top["x_axis"] = dff_top[x_col]
-            dff["x_axis"] = dff[x_col]
             dtick = 2
         elif time_unit == "weekday":
             x_col, x_label = "weekday", "Day of Week"
             categories = days_order
-            dff_top["x_axis"] = dff_top[x_col]
-            dff["x_axis"] = dff[x_col]
             dtick = 1
         elif time_unit == "month":
             x_col, x_label = "month_name", "Month of Year"
             categories = months_order
-            dff_top["x_axis"] = dff_top[x_col]
-            dff["x_axis"] = dff[x_col]
             dtick = 1
         else:  # year
             x_col, x_label = "year", "Year"
-            categories = sorted(dff[x_col].unique())
-            dff_top["x_axis"] = dff_top[x_col]
-            dff["x_axis"] = dff[x_col]
+            categories = sorted(dff[x_col].dropna().unique())  # Dropna for safety
             dtick = 1
 
-        # --- LOGIC CORRIGÉE ---
+        dff_top["x_axis"] = dff_top[x_col]
+        dff["x_axis"] = dff[x_col]
 
-        # 1. Calculer les valeurs pour le serveur
+        # 1. Calculate server percentages
         if metric_selected == "characters":
             server_values = dff.groupby("x_axis")["character_count"].sum()
         else:
@@ -677,7 +763,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
             (server_values / server_total) * 100 if server_total > 0 else 0
         )
 
-        # 2. Calculer les valeurs pour les utilisateurs (un par un)
+        # 2. Calculate user percentages individually (THE FIX)
         all_user_data = []
         for user in top_users:
             user_df = dff_top[dff_top["author_name"] == user]
@@ -687,29 +773,27 @@ def register_callbacks(app, df, role_colors_map, member_data):
             else:
                 user_values_single = user_df.groupby("x_axis").size()
 
+            # Reindex based on the correct categories
             user_values_reindexed = user_values_single.reindex(categories).fillna(0)
 
-            # Calculer le pourcentage
             user_total = user_values_reindexed.sum()
             user_percentage = (
                 (user_values_reindexed / user_total) * 100 if user_total > 0 else 0
             )
 
-            # Préparer pour la concaténation
             user_percentage_df = user_percentage.reset_index()
             user_percentage_df.columns = ["x_axis", "percentage"]
             user_percentage_df["author_name"] = user
             all_user_data.append(user_percentage_df)
 
         if not all_user_data:
-            # Gérer le cas où dff_top est vide mais dff ne l'est pas
             user_values_final = pd.DataFrame(
                 columns=["x_axis", "percentage", "author_name"]
             )
         else:
             user_values_final = pd.concat(all_user_data, ignore_index=True)
 
-        # 3. Créer le graphique
+        # 3. Create the plot
         fig = px.line(
             user_values_final,
             x="x_axis",
@@ -734,6 +818,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
         fig.update_layout(xaxis={"dtick": dtick}, legend={"title": "Legend"})
         fig.update_xaxes(categoryorder="array", categoryarray=categories)
         return fig
+        # --- END OF CORRECTED FUNCTION ---
 
     def create_leaderboard(dff, period, metric_name, date_format, metric_selected):
         if dff.empty:
@@ -780,7 +865,7 @@ def register_callbacks(app, df, role_colors_map, member_data):
         ]
         return html.Ul(items, className="list-group list-group-flush")
 
-    def create_activity_heatmap(dff, metric_selected):
+    def create_most_mentioned_graph(dff, user_id_map, color_map):
         if dff.empty:
             return go.Figure(
                 layout={
@@ -789,50 +874,169 @@ def register_callbacks(app, df, role_colors_map, member_data):
                 }
             )
 
-        if metric_selected == "characters":
-            agg_col = "character_count"
-            agg_func = "sum"
-            z_suffix = " chars"
-        else:
-            agg_col = "timestamp"
-            agg_func = "count"
-            z_suffix = " msgs"
+        mention_counts = {}
 
-        grouped = (
-            dff.groupby(["hour_of_day", "weekday"])[agg_col]
-            .agg(agg_func)
-            .reset_index(name="value")
+        # --- FIX 2: More robust counting ---
+        # 1. Count Replies
+        # Replace potential empty strings or other junk with NaN, then drop
+        replies = dff["replied_to_author_id"].replace("", pd.NA).dropna()
+        if not replies.empty:
+            reply_counts = replies.astype(str).value_counts()
+            for user_id, count in reply_counts.items():
+                mention_counts[user_id] = mention_counts.get(user_id, 0) + count
+
+        # 2. Count @ Mentions (from stored list)
+        # Ensure the column contains lists, not NaNs or other types
+        mentions_list = dff["mentioned_user_ids"].apply(
+            lambda x: x if isinstance(x, list) else []
+        )
+        mention_df = mentions_list.explode().dropna()
+        # --- End Fix ---
+
+        if not mention_df.empty:
+            mention_id_counts = mention_df.astype(str).value_counts()
+            for user_id, count in mention_id_counts.items():
+                mention_counts[user_id] = mention_counts.get(user_id, 0) + count
+
+        if not mention_counts:
+            return go.Figure(
+                layout={
+                    "template": "plotly_white",
+                    "annotations": [
+                        {"text": "No mentions or replies found", "showarrow": False}
+                    ],
+                }
+            )
+
+        mentions_final_df = pd.DataFrame(
+            list(mention_counts.items()), columns=["user_id", "count"]
         )
 
-        heatmap_data = grouped.pivot_table(
-            index="weekday", columns="hour_of_day", values="value"
-        ).fillna(0)
-        heatmap_data = heatmap_data.reindex(days_order)
+        # Safely convert user_id to numeric, coercing errors to NaN
+        mentions_final_df["user_id_int"] = pd.to_numeric(
+            mentions_final_df["user_id"], errors="coerce"
+        )
+        mentions_final_df = mentions_final_df.dropna(
+            subset=["user_id_int"]
+        )  # Drop rows that couldn't be converted
+        mentions_final_df["user_id_int"] = mentions_final_df["user_id_int"].astype(int)
 
-        z = heatmap_data.values
-        x = heatmap_data.columns
-        y = heatmap_data.index
-        z_text = [
-            [f"{val:,.0f}{z_suffix}".replace(",", " ") for val in row] for row in z
-        ]
+        mentions_final_df["author_name"] = mentions_final_df["user_id_int"].map(
+            user_id_map
+        )
+
+        mentions_final_df = mentions_final_df.dropna(subset=["author_name"])
+        if mentions_final_df.empty:
+            return go.Figure(
+                layout={
+                    "template": "plotly_white",
+                    "annotations": [
+                        {"text": "No mentions for known users", "showarrow": False}
+                    ],
+                }
+            )
+
+        mentions_final_df = (
+            mentions_final_df.groupby("author_name")["count"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(15)
+        )
+
+        colors = [color_map.get(name, "#6c757d") for name in mentions_final_df.index]
 
         fig = go.Figure(
-            data=go.Heatmap(
-                z=z,
-                x=x,
-                y=y,
-                colorscale="Blues",
-                hoverongaps=False,
-                text=z_text,
-                texttemplate="%{text}",
-                showscale=False,
-            )
+            data=[
+                go.Bar(
+                    y=mentions_final_df.index,
+                    x=mentions_final_df.values,
+                    orientation="h",
+                    marker=dict(color=colors),
+                )
+            ]
         )
 
         fig.update_layout(
+            xaxis_title="Number of Times Mentioned (Reply + @)",
+            yaxis_title="User",
+            yaxis={"categoryorder": "total ascending"},
             template="plotly_white",
-            xaxis_title="Hour of Day",
-            yaxis_title="Day of Week",
-            xaxis=dict(dtick=2),
+            margin=dict(l=150),
         )
         return fig
+
+    def create_top_reactions_list(
+        dff, user_id_map_full, role_colors_map, current_member_ids_int
+    ):
+        if dff.empty or "reaction_count" not in dff.columns:
+            return html.P(
+                "No reaction data available for this period.",
+                className="text-center text-muted p-4",
+            )
+
+        # Fill NaN with 0 before sorting
+        dff["reaction_count"] = dff["reaction_count"].fillna(0)
+
+        top_reacted = dff.sort_values(by="reaction_count", ascending=False).head(10)
+        top_reacted = top_reacted[
+            top_reacted["reaction_count"] > 0
+        ]  # Only show messages with reactions
+
+        if top_reacted.empty:
+            return html.P(
+                "No messages with reactions found.",
+                className="text-center text-muted p-4",
+            )
+
+        list_items = []
+        for index, row in top_reacted.iterrows():
+            author_name = row["author_name"]
+            author_id = user_id_map_full.get(author_name)
+            is_member = author_id in current_member_ids_int
+            author_color = (
+                role_colors_map.get(str(author_id), "#6c757d")
+                if is_member
+                else "#6c757d"
+            )
+
+            message_content = row["content"]
+            if len(message_content) > 200:  # Increased length
+                message_content = message_content[:200] + "..."
+            if not message_content:
+                message_content = "[Message without text (e.g., image, embed)]"
+
+            list_items.append(
+                html.Li(
+                    className="list-group-item d-flex justify-content-between align-items-start",
+                    children=[
+                        html.Div(
+                            className="ms-2 me-auto",
+                            children=[
+                                html.Div(
+                                    html.Strong(
+                                        author_name, style={"color": author_color}
+                                    ),
+                                    className="fw-bold",
+                                ),
+                                html.P(
+                                    message_content,
+                                    className="mb-1",
+                                    style={"whiteSpace": "pre-wrap"},
+                                ),  # Preserve line breaks
+                                html.A(
+                                    "Go to message",
+                                    href=row["jump_url"],
+                                    target="_blank",
+                                    className="small text-muted",
+                                ),
+                            ],
+                        ),
+                        html.Span(
+                            f"{int(row['reaction_count'])} users",
+                            className="badge bg-primary rounded-pill fs-6",
+                        ),  # Made badge bigger
+                    ],
+                )
+            )
+
+        return html.Ul(list_items, className="list-group")

@@ -206,8 +206,8 @@ def create_layout(df):
                     ),
                 ],
             ),
-            # --- Section 2: Message Analysis ---
-            html.H2("Message Analysis", className="h4 mt-5 mb-3"),
+            # --- Section 2: Message & Interaction Analysis --- Changed Title
+            html.H2("Message & Interaction Analysis", className="h4 mt-5 mb-3"),
             html.Div(
                 className="row",
                 children=[
@@ -289,6 +289,7 @@ def create_layout(df):
                             )
                         ],
                     ),
+                    # --- NEW: Most Mentioned Users ---
                     html.Div(
                         className="col-lg-6 mb-4",
                         children=[
@@ -298,7 +299,7 @@ def create_layout(df):
                                     html.Div(
                                         className="card-header",
                                         children=html.H5(
-                                            "Activity Heatmap (Day/Hour)",
+                                            "Most Mentioned Users (Replies + Pings)",
                                             className="card-title mb-0",
                                         ),
                                     ),
@@ -306,7 +307,7 @@ def create_layout(df):
                                         className="card-body",
                                         children=dcc.Loading(
                                             dcc.Graph(
-                                                id="activity-heatmap",
+                                                id="mentioned-users-graph",
                                                 style={"height": "500px"},
                                             )
                                         ),
@@ -315,6 +316,40 @@ def create_layout(df):
                             )
                         ],
                     ),
+                ],
+            ),
+            # --- NEW: Top Reacted Messages (Full Width) ---
+            html.Div(
+                className="row",
+                children=[
+                    html.Div(
+                        className="col-lg-12 mb-4",
+                        children=[
+                            html.Div(
+                                className="card shadow-sm h-100",
+                                children=[
+                                    html.Div(
+                                        className="card-header",
+                                        children=html.H5(
+                                            "Top 10 Reacted Messages (Unique Users)",
+                                            className="card-title mb-0",
+                                        ),
+                                    ),
+                                    # Use overflow-auto for scrolling if content is too long
+                                    html.Div(
+                                        className="card-body",
+                                        style={
+                                            "maxHeight": "600px",
+                                            "overflowY": "auto",
+                                        },
+                                        children=dcc.Loading(
+                                            html.Div(id="top-reacted-messages")
+                                        ),
+                                    ),
+                                ],
+                            )
+                        ],
+                    )
                 ],
             ),
             # --- Section 3: Leaderboards ---
