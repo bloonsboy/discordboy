@@ -1,435 +1,479 @@
-# dashboardus/layoutus.py
+# discordboy/dashboardus/layoutus.py
 
-from dash import dcc, html
-import dash_bootstrap_components as dbc
 from datetime import datetime, timedelta
-import pandas as pd
+
+import dash_bootstrap_components as dbc
+from dash import dcc, html
+
+from .callbackus import CONTENT_STYLE_FULL, HEADER_STYLE_FULL, SIDEBAR_HIDDEN
 
 
 def create_layout(df):
     if df.empty:
         return html.Div("No data available to display.")
+
     min_date = df["timestamp"].min().date()
     max_date = df["timestamp"].max().date()
 
-    return html.Div(
-        className="container-fluid bg-light",
-        style={"fontFamily": "Inter, sans-serif"},
-        children=[
+    sidebar = html.Div(
+        [
+            html.H2("Filters", className="display-6"),
+            html.Hr(),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label("Top Users", className="form-label fw-bold"),
+                            dcc.Dropdown(
+                                id="top-n-dropdown",
+                                options=[
+                                    {"label": "Top 5", "value": 5},
+                                    {"label": "Top 10", "value": 10},
+                                    {"label": "Top 20", "value": 20},
+                                    {"label": "Top 50", "value": 50},
+                                    {"label": "Top 100", "value": 100},
+                                    {"label": "Custom", "value": "custom"},
+                                ],
+                                value=5,
+                                clearable=False,
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label("Users", className="form-label fw-bold"),
+                            dcc.Dropdown(
+                                id="user-dropdown",
+                                multi=True,
+                                placeholder="Select users...",
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label(
+                                "Highlight User", className="form-label fw-bold"
+                            ),
+                            dcc.Dropdown(
+                                id="highlight-user-dropdown",
+                                multi=False,
+                                placeholder="Select a user to highlight...",
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label("Time Period", className="form-label fw-bold"),
+                            dcc.Dropdown(
+                                id="date-range-dropdown",
+                                options=[
+                                    {"label": "Custom", "value": "custom"},
+                                    {"label": "Current Year", "value": "current_year"},
+                                    {"label": "Last 365 Days", "value": "last_365"},
+                                    {
+                                        "label": "Last 6 Months",
+                                        "value": "last_6_months",
+                                    },
+                                    {
+                                        "label": "Last Month",
+                                        "value": "last_month",
+                                    },
+                                    {"label": "All-time", "value": "all-time"},
+                                ],
+                                value="last_365",
+                                clearable=False,
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label("Date Range", className="form-label fw-bold"),
+                            dcc.DatePickerRange(
+                                id="date-picker-range",
+                                min_date_allowed=min_date,
+                                max_date_allowed=max_date,
+                                start_date=(
+                                    datetime.now() - timedelta(days=365)
+                                ).date(),
+                                end_date=datetime.now().date(),
+                                display_format="DD/MM/YYYY",
+                                className="w-100",
+                            ),
+                            html.Div(
+                                id="date-range-display",
+                                className="text-muted small mt-1",
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label(
+                                "Analysis Metric", className="form-label fw-bold"
+                            ),
+                            dbc.RadioItems(
+                                id="metric-selector",
+                                options=[
+                                    {"label": "Message Count", "value": "messages"},
+                                    {"label": "Character Count", "value": "characters"},
+                                ],
+                                value="messages",
+                                inline=True,
+                                labelClassName="me-3",
+                                inputClassName="me-1",
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label(
+                                "Special Filter (Role)", className="form-label fw-bold"
+                            ),
+                            dbc.RadioItems(
+                                id="virgule-filter",
+                                options=[
+                                    {"label": "Everyone", "value": "everyone"},
+                                    {"label": "Virgule Only", "value": "virgule_only"},
+                                    {"label": "No Virgule", "value": "no_virgule"},
+                                ],
+                                value="everyone",
+                                inline=True,
+                                labelClassName="me-3",
+                                inputClassName="me-1",
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+        ],
+        id="filter-sidebar",
+        style=SIDEBAR_HIDDEN,
+    )
+
+    header = dbc.Navbar(
+        dbc.Container(
+            [
+                dbc.Button(
+                    html.I(className="fas fa-bars"),
+                    id="open-filter-sidebar",
+                    n_clicks=0,
+                    className="me-2",
+                    color="light",
+                ),
+                html.A(
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                html.I(
+                                    className="fab fa-discord",
+                                    style={"color": "white", "fontSize": "30px"},
+                                )
+                            ),
+                            dbc.Col(
+                                dbc.NavbarBrand(
+                                    "Virgule du 4'", className="ms-2"
+                                )
+                            ),
+                        ],
+                        align="center",
+                        className="g-0",
+                    ),
+                    href="#",
+                    style={"textDecoration": "none"},
+                ),
+            ]
+        ),
+        id="page-header",
+        style=HEADER_STYLE_FULL,
+        color="dark",
+        dark=True,
+        className="mb-4",
+    )
+
+    content = html.Div(
+        [
+            dcc.Store(id="sidebar-state-store", data=False),
             dcc.Markdown(id="dynamic-styles", style={"display": "none"}),
-            # --- Header ---
-            html.Header(
-                className="bg-white shadow-sm mb-4",
-                children=html.Div(
-                    className="container-xxl d-flex align-items-center py-3",
-                    children=[
-                        html.I(
-                            className="fab fa-discord me-3",
-                            style={"fontSize": "2rem", "color": "#5865F2"},
-                        ),
-                        html.H1("Discord Activity Dashboard", className="h3 mb-0"),
-                    ],
-                ),
-            ),
-            # --- Filters Panel ---
-            html.Div(
-                id="filter-panel",
-                className="card shadow-sm mb-4",
-                children=html.Div(
-                    className="card-body",
-                    children=[
-                        html.H5("Filters", className="card-title mb-4"),
-                        html.Div(
-                            className="row g-4",
-                            children=[
-                                # --- Column 1: Selection ---
-                                html.Div(
-                                    className="col-md-5",
-                                    children=[
-                                        html.H6("Selection", className="text-muted"),
-                                        html.Label(
-                                            "Top Users", className="form-label small"
-                                        ),
-                                        dcc.Dropdown(
-                                            id="top-n-dropdown",
-                                            options=[
-                                                {"label": "Top 5", "value": 5},
-                                                {"label": "Top 10", "value": 10},
-                                                {"label": "Top 20", "value": 20},
-                                                {"label": "Top 50", "value": 50},
-                                                {"label": "Custom", "value": "custom"},
-                                            ],
-                                            value=10,
-                                            clearable=False,
-                                        ),
-                                        html.Label(
-                                            "Users", className="form-label small mt-3"
-                                        ),
-                                        dcc.Dropdown(id="user-dropdown", multi=True),
-                                        html.Label(
-                                            "Highlight User",
-                                            className="form-label small mt-3",
-                                        ),
-                                        dcc.Dropdown(
-                                            id="highlight-user-dropdown",
-                                            clearable=True,
-                                            placeholder="Select a user to highlight...",
-                                        ),
-                                    ],
-                                ),
-                                # --- Column 2: Time ---
-                                html.Div(
-                                    className="col-md-4",
-                                    children=[
-                                        html.H6("Time", className="text-muted"),
-                                        html.Label(
-                                            "Period", className="form-label small"
-                                        ),
-                                        dcc.Dropdown(
-                                            id="date-range-dropdown",
-                                            options=[
-                                                {"label": "Custom", "value": "custom"},
-                                                {
-                                                    "label": "Current Year",
-                                                    "value": "current_year",
-                                                },
-                                                {
-                                                    "label": "Last 365 Days",
-                                                    "value": "last_365",
-                                                },
-                                                {
-                                                    "label": "Last 6 Months",
-                                                    "value": "last_6_months",
-                                                },
-                                                {
-                                                    "label": "All-time",
-                                                    "value": "all-time",
-                                                },
-                                            ],
-                                            value="last_365",
-                                            clearable=False,
-                                        ),
-                                        html.Label(
-                                            "Date Range",
-                                            className="form-label small mt-3",
-                                        ),
-                                        dcc.DatePickerRange(
-                                            id="date-picker-range",
-                                            min_date_allowed=min_date,
-                                            max_date_allowed=max_date,
-                                            start_date=(
-                                                datetime.now() - timedelta(days=365)
-                                            ).date(),
-                                            end_date=datetime.now().date(),
-                                            display_format="DD/MM/YYYY",
-                                            className="w-100",
-                                        ),
-                                        html.Div(
-                                            id="date-range-display",
-                                            className="text-muted mt-2 small",
-                                        ),
-                                    ],
-                                ),
-                                # --- Column 3: Analysis ---
-                                html.Div(
-                                    className="col-md-3",
-                                    children=[
-                                        html.H6("Analysis", className="text-muted"),
-                                        html.Label(
-                                            "Analyze by:", className="form-label small"
-                                        ),
-                                        dbc.RadioItems(
-                                            id="metric-selector",
-                                            options=[
-                                                {
-                                                    "label": "Message Count",
-                                                    "value": "messages",
-                                                },
-                                                {
-                                                    "label": "Character Count",
-                                                    "value": "characters",
-                                                },
-                                            ],
-                                            value="messages",
-                                            labelClassName="me-3",
-                                            inputClassName="me-1",
-                                        ),
-                                        html.Label(
-                                            "Special Filter",
-                                            className="form-label small fw-bold mt-4",
-                                        ),
-                                        dbc.Checklist(
-                                            options=[
-                                                {
-                                                    "label": "Show 'Virgule du 4' Only",
-                                                    "value": 1,
-                                                },
-                                            ],
-                                            value=[],
-                                            id="virgule-filter",
-                                            switch=True,
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-            ),
             html.Div(id="user-profile-card-container"),
-            # --- Section 1: Temporal Analysis ---
-            html.H2("Temporal Analysis", className="h4 mt-5 mb-3"),
             html.Div(
-                className="card shadow-sm mb-4",
-                children=[
-                    html.Div(
-                        className="card-header d-flex justify-content-between align-items-center",
-                        children=[
-                            html.H5("Activity Evolution", className="card-title mb-0"),
-                            dcc.Slider(
-                                id="evolution-graph-selector",
-                                min=0,
-                                max=1,
-                                value=0,
-                                marks={0: "Cumulative", 1: "Monthly"},
-                                step=None,
-                                className="w-25",
+                [
+                    html.H3("Temporal Analysis"),
+                    html.Hr(),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                dcc.Slider(
+                                    id="evolution-graph-selector",
+                                    min=0,
+                                    max=1,
+                                    step=None,
+                                    marks={0: "Cumulative", 1: "Monthly"},
+                                    value=0,
+                                    className="mb-4",
+                                ),
+                                dcc.Loading(
+                                    dcc.Graph(
+                                        id="evolution-graph", style={"height": "600px"}
+                                    )
+                                ),
+                            ]
+                        ),
+                        className="shadow-sm mb-4",
+                    ),
+                ],
+                className="mb-5",
+            ),
+            html.Div(
+                [
+                    html.H3("Message Distribution"),
+                    html.Hr(),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                dbc.RadioItems(
+                                    id="distribution-time-unit",
+                                    options=[
+                                        {"label": "Hour of Day", "value": "hour"},
+                                        {"label": "Day of Week", "value": "weekday"},
+                                        {"label": "Month", "value": "month"},
+                                        {"label": "Year", "value": "year"},
+                                    ],
+                                    value="hour",
+                                    inline=True,
+                                    className="mb-3",
+                                ),
+                                dcc.Loading(dcc.Graph(id="distribution-graph")),
+                            ]
+                        ),
+                        className="shadow-sm mb-4",
+                    ),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                dbc.Card(
+                                    dbc.CardBody(
+                                        [
+                                            html.H5(
+                                                "Message Length",
+                                                className="card-title",
+                                            ),
+                                            dcc.Loading(
+                                                dcc.Graph(id="median-length-graph")
+                                            ),
+                                        ]
+                                    ),
+                                    className="shadow-sm h-100",
+                                ),
+                                md=6,
+                                className="mb-4",
+                            ),
+                            dbc.Col(
+                                dbc.Card(
+                                    dbc.CardBody(
+                                        [
+                                            html.H5(
+                                                "Most Mentioned Users",
+                                                className="card-title",
+                                            ),
+                                            dcc.Loading(
+                                                dcc.Graph(id="mentioned-users-graph")
+                                            ),
+                                        ]
+                                    ),
+                                    className="shadow-sm h-100",
+                                ),
+                                md=6,
+                                className="mb-4",
                             ),
                         ],
                     ),
-                    html.Div(
-                        className="card-body",
-                        children=dcc.Loading(
-                            dcc.Graph(id="evolution-graph", style={"height": "600px"}),
-                            type="default",
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H5(
+                                    "Top 10 Reacted Messages",
+                                    className="card-title",
+                                ),
+                                dcc.Loading(html.Div(id="top-reacted-messages")),
+                            ]
                         ),
+                        className="shadow-sm mb-4",
                     ),
                 ],
+                className="mb-5",
             ),
-            # --- Section 2: Message & Interaction Analysis --- Changed Title
-            html.H2("Message & Interaction Analysis", className="h4 mt-5 mb-3"),
             html.Div(
-                className="row",
-                children=[
-                    html.Div(
-                        className="col-lg-12 mb-4",
-                        children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
-                                children=[
-                                    html.Div(
-                                        className="card-header d-flex justify-content-between align-items-center",
-                                        children=[
-                                            html.H5(
-                                                "Distribution (Top 3 vs Server)",
-                                                className="card-title mb-0",
-                                            ),
-                                            dbc.RadioItems(
-                                                id="distribution-time-unit",
-                                                options=[
-                                                    {"label": "Hour", "value": "hour"},
-                                                    {
-                                                        "label": "Day",
-                                                        "value": "weekday",
-                                                    },
-                                                    {
-                                                        "label": "Month",
-                                                        "value": "month",
-                                                    },
-                                                    {"label": "Year", "value": "year"},
-                                                ],
-                                                value="hour",
-                                                inline=True,
-                                                labelClassName="me-2 small",
-                                                inputClassName="me-1",
-                                            ),
+                [
+                    html.H3("Leaderboards"),
+                    html.Hr(),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.Label(
+                                        "Daily Champions View Mode",
+                                        className="form-label fw-bold",
+                                    ),
+                                    dbc.RadioItems(
+                                        id="daily-leaderboard-toggle",
+                                        options=[
+                                            {"label": "List", "value": "list"},
+                                            {"label": "Calendar", "value": "calendar"},
                                         ],
-                                    ),
-                                    html.Div(
-                                        className="card-body",
-                                        children=dcc.Loading(
-                                            dcc.Graph(
-                                                id="distribution-graph",
-                                                style={"height": "500px"},
-                                            )
-                                        ),
+                                        value="list",
+                                        inline=True,
+                                        className="mb-3",
                                     ),
                                 ],
+                                width=12,
                             )
-                        ],
+                        ]
                     ),
-                ],
-            ),
-            html.Div(
-                className="row",
-                children=[
-                    html.Div(
-                        className="col-lg-6 mb-4",
+                    dcc.Tabs(
+                        id="leaderboard-tabs",
+                        className="mb-3",
                         children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
+                            dbc.Tab(
+                                label="By Message Count",
+                                tab_id="msg",
                                 children=[
-                                    html.Div(
-                                        className="card-header",
-                                        children=html.H5(
-                                            "Median Message Length",
-                                            className="card-title mb-0",
-                                        ),
-                                    ),
-                                    html.Div(
-                                        className="card-body",
-                                        children=dcc.Loading(
-                                            dcc.Graph(
-                                                id="median-length-graph",
-                                                style={"height": "500px"},
-                                            )
-                                        ),
-                                    ),
+                                    dbc.Row(
+                                        [
+                                            dbc.Col(
+                                                dbc.Card(
+                                                    [
+                                                        dbc.CardHeader(
+                                                            html.H5(
+                                                                "Daily Champions (Messages)",
+                                                                className="card-title mb-0",
+                                                            )
+                                                        ),
+                                                        dbc.CardBody(
+                                                            dcc.Loading(
+                                                                html.Div(
+                                                                    id="daily-leaderboard-msg-container"
+                                                                )
+                                                            )
+                                                        ),
+                                                    ],
+                                                    className="shadow-sm h-100",
+                                                ),
+                                                md=6,
+                                                className="mb-4",
+                                            ),
+                                            dbc.Col(
+                                                create_leaderboard_card(
+                                                    "Monthly Champions (Messages)",
+                                                    "monthly-leaderboard-msg",
+                                                ),
+                                                md=6,
+                                                className="mb-4",
+                                            ),
+                                        ]
+                                    )
                                 ],
-                            )
-                        ],
-                    ),
-                    # --- NEW: Most Mentioned Users ---
-                    html.Div(
-                        className="col-lg-6 mb-4",
-                        children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
+                            ),
+                            dbc.Tab(
+                                label="By Character Count",
+                                tab_id="char",
                                 children=[
-                                    html.Div(
-                                        className="card-header",
-                                        children=html.H5(
-                                            "Most Mentioned Users (Replies + Pings)",
-                                            className="card-title mb-0",
-                                        ),
-                                    ),
-                                    html.Div(
-                                        className="card-body",
-                                        children=dcc.Loading(
-                                            dcc.Graph(
-                                                id="mentioned-users-graph",
-                                                style={"height": "500px"},
-                                            )
-                                        ),
-                                    ),
+                                    dbc.Row(
+                                        [
+                                            dbc.Col(
+                                                dbc.Card(
+                                                    [
+                                                        dbc.CardHeader(
+                                                            html.H5(
+                                                                "Daily Champions (Characters)",
+                                                                className="card-title mb-0",
+                                                            )
+                                                        ),
+                                                        dbc.CardBody(
+                                                            dcc.Loading(
+                                                                html.Div(
+                                                                    id="daily-leaderboard-char-container"
+                                                                )
+                                                            )
+                                                        ),
+                                                    ],
+                                                    className="shadow-sm h-100",
+                                                ),
+                                                md=6,
+                                                className="mb-4",
+                                            ),
+                                            dbc.Col(
+                                                create_leaderboard_card(
+                                                    "Monthly Champions (Characters)",
+                                                    "monthly-leaderboard-char",
+                                                ),
+                                                md=6,
+                                                className="mb-4",
+                                            ),
+                                        ]
+                                    )
                                 ],
-                            )
-                        ],
-                    ),
-                ],
-            ),
-            # --- NEW: Top Reacted Messages (Full Width) ---
-            html.Div(
-                className="row",
-                children=[
-                    html.Div(
-                        className="col-lg-12 mb-4",
-                        children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
-                                children=[
-                                    html.Div(
-                                        className="card-header",
-                                        children=html.H5(
-                                            "Top 10 Reacted Messages (Unique Users)",
-                                            className="card-title mb-0",
-                                        ),
-                                    ),
-                                    # Use overflow-auto for scrolling if content is too long
-                                    html.Div(
-                                        className="card-body",
-                                        style={
-                                            "maxHeight": "600px",
-                                            "overflowY": "auto",
-                                        },
-                                        children=dcc.Loading(
-                                            html.Div(id="top-reacted-messages")
-                                        ),
-                                    ),
-                                ],
-                            )
-                        ],
-                    )
-                ],
-            ),
-            # --- Section 3: Leaderboards ---
-            html.H2("Leaderboards", className="h4 mt-5 mb-3"),
-            html.Div(
-                className="row",
-                children=[
-                    html.Div(
-                        className="col-lg-6 mb-4",
-                        children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
-                                children=[
-                                    html.Div(
-                                        className="card-header bg-primary text-white",
-                                        children=html.H5(
-                                            "Champions by Message Count",
-                                            className="card-title mb-0",
-                                        ),
-                                    ),
-                                    html.Div(
-                                        className="card-body p-0",
-                                        children=[
-                                            html.H6(
-                                                "🏆 Monthly Champions",
-                                                className="px-3 pt-3",
-                                            ),
-                                            dcc.Loading(
-                                                html.Div(id="monthly-leaderboard-msg")
-                                            ),
-                                            html.H6(
-                                                "🥇 Daily Champions",
-                                                className="px-3 pt-3",
-                                            ),
-                                            dcc.Loading(
-                                                html.Div(id="daily-leaderboard-msg")
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            )
-                        ],
-                    ),
-                    html.Div(
-                        className="col-lg-6 mb-4",
-                        children=[
-                            html.Div(
-                                className="card shadow-sm h-100",
-                                children=[
-                                    html.Div(
-                                        className="card-header bg-success text-white",
-                                        children=html.H5(
-                                            "Champions by Character Count",
-                                            className="card-title mb-0",
-                                        ),
-                                    ),
-                                    html.Div(
-                                        className="card-body p-0",
-                                        children=[
-                                            html.H6(
-                                                "🏆 Monthly Champions",
-                                                className="px-3 pt-3",
-                                            ),
-                                            dcc.Loading(
-                                                html.Div(id="monthly-leaderboard-char")
-                                            ),
-                                            html.H6(
-                                                "🥇 Daily Champions",
-                                                className="px-3 pt-3",
-                                            ),
-                                            dcc.Loading(
-                                                html.Div(id="daily-leaderboard-char")
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            )
+                            ),
                         ],
                     ),
                 ],
             ),
         ],
+        id="page-content",
+        style=CONTENT_STYLE_FULL,
+    )
+
+    return html.Div(
+        [
+            dcc.Location(id="url"),
+            header,
+            sidebar,
+            content,
+        ]
+    )
+
+
+def create_leaderboard_card(title, container_id):
+    return dbc.Card(
+        [
+            dbc.CardHeader(html.H5(title, className="card-title mb-0")),
+            dbc.CardBody(dcc.Loading(html.Div(id=container_id))),
+        ],
+        className="shadow-sm h-100",
     )

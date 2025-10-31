@@ -1,33 +1,25 @@
-# dashboardus/appus.py
+# discordboy/dashboardus/appus.py
 
 import dash
-import json
-import os
-import pandas as pd
 import dash_bootstrap_components as dbc
-from .layoutus import create_layout
+
 from .callbackus import register_callbacks
+from .layoutus import create_layout
 
-# Thème Litera et Font Awesome pour les icônes
-EXTERNAL_STYLESHEETS = [
-    dbc.themes.LITERA,
-    "https://use.fontawesome.com/releases/v5.15.4/css/all.css",
-]
+EXTERNAL_STYLESHEETS = [dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME]
 
 
-def create_app(df, role_colors_map, member_data):
-    """
-    Crée et configure l'application Dash.
-    """
+def create_app(df, role_colors_map, member_data, role_names_map):
     app = dash.Dash(
         __name__,
-        title="Statistiques Discord",
         external_stylesheets=EXTERNAL_STYLESHEETS,
+        suppress_callback_exceptions=True,
+        update_title=None,
     )
 
+    app.title = "Virgule du 4'"
     app.layout = create_layout(df)
 
-    # Transmet les nouvelles 'member_data' aux callbacks
-    register_callbacks(app, df, role_colors_map, member_data)
+    register_callbacks(app, df, role_colors_map, member_data, role_names_map)
 
     return app

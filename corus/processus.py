@@ -1,11 +1,12 @@
-# corus/data_processing.py
+# discordboy/corus/data_processing.py
+
+import logging
 
 import pandas as pd
-import logging
+
 
 def process_and_save_stats(df, filename):
     if df.empty:
-        logging.info("No data to process.")
         return pd.DataFrame()
         
     df_copy = df.copy()
