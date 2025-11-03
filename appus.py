@@ -13,7 +13,7 @@ from dataus.constant import (
     CACHE_FILENAME,
     DATA_DIR,
     EXCLUDED_CHANNEL_IDS,
-    ID_NAME_MAP,
+    NAME_REPLACE_MAP,
     IDS_TO_EXCLUDE,
     MIN_MESSAGE_COUNT,
     ROLE_DATA_FILENAME,
@@ -41,7 +41,7 @@ def prepare_dataframe(df, member_data):
 
     df_copy["original_author_name"] = df_copy["author_name"]
 
-    id_mapped_names = df_copy["author_id"].map(ID_NAME_MAP)
+    id_mapped_names = df_copy["author_id"].map(NAME_REPLACE_MAP)
     df_copy["author_name"] = id_mapped_names.fillna(df_copy["original_author_name"])
 
     EXCLUDE_LIST = list(IDS_TO_EXCLUDE) + list(SMURF_IDS)
