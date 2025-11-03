@@ -1,5 +1,3 @@
-# discordboy/dashboardus/layoutus.py
-
 from datetime import datetime, timedelta
 
 import dash_bootstrap_components as dbc
@@ -86,15 +84,17 @@ def create_layout(df):
                                 id="date-range-dropdown",
                                 options=[
                                     {"label": "Custom", "value": "custom"},
-                                    {"label": "Current Year", "value": "current_year"},
-                                    {"label": "Last 365 Days", "value": "last_365"},
+                                    {
+                                        "label": "Current Year",
+                                        "value": "current_year",
+                                    },
+                                    {
+                                        "label": "Last 365 Days",
+                                        "value": "last_365",
+                                    },
                                     {
                                         "label": "Last 6 Months",
                                         "value": "last_6_months",
-                                    },
-                                    {
-                                        "label": "Last Month",
-                                        "value": "last_month",
                                     },
                                     {"label": "All-time", "value": "all-time"},
                                 ],
@@ -144,7 +144,10 @@ def create_layout(df):
                                 id="metric-selector",
                                 options=[
                                     {"label": "Message Count", "value": "messages"},
-                                    {"label": "Character Count", "value": "characters"},
+                                    {
+                                        "label": "Character Count",
+                                        "value": "characters",
+                                    },
                                 ],
                                 value="messages",
                                 inline=True,
@@ -182,6 +185,24 @@ def create_layout(df):
                 ],
                 className="mb-3",
             ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Label(
+                                "Channel Filter", className="form-label fw-bold"
+                            ),
+                            dbc.Switch(
+                                id="mudae-filter-switch",
+                                label="Include Mudae Channels",
+                                value=False,
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
         ],
         id="filter-sidebar",
         style=SIDEBAR_HIDDEN,
@@ -208,7 +229,7 @@ def create_layout(df):
                             ),
                             dbc.Col(
                                 dbc.NavbarBrand(
-                                    "Virgule du 4'", className="ms-2"
+                                    "Discord Activity Dashboard", className="ms-2"
                                 )
                             ),
                         ],
@@ -250,7 +271,8 @@ def create_layout(df):
                                 ),
                                 dcc.Loading(
                                     dcc.Graph(
-                                        id="evolution-graph", style={"height": "600px"}
+                                        id="evolution-graph",
+                                        style={"height": "600px"},
                                     )
                                 ),
                             ]
@@ -262,7 +284,7 @@ def create_layout(df):
             ),
             html.Div(
                 [
-                    html.H3("Message Distribution"),
+                    html.H3("Message & Interaction Analysis"),
                     html.Hr(),
                     dbc.Card(
                         dbc.CardBody(
@@ -291,7 +313,7 @@ def create_layout(df):
                                     dbc.CardBody(
                                         [
                                             html.H5(
-                                                "Message Length",
+                                                "Median Message Length (Characters)",
                                                 className="card-title",
                                             ),
                                             dcc.Loading(
@@ -309,7 +331,7 @@ def create_layout(df):
                                     dbc.CardBody(
                                         [
                                             html.H5(
-                                                "Most Mentioned Users",
+                                                "Most Mentioned (Users & Roles)",
                                                 className="card-title",
                                             ),
                                             dcc.Loading(
@@ -328,7 +350,7 @@ def create_layout(df):
                         dbc.CardBody(
                             [
                                 html.H5(
-                                    "Top 10 Reacted Messages",
+                                    "Top 10 Reacted Messages (Unique Users)",
                                     className="card-title",
                                 ),
                                 dcc.Loading(html.Div(id="top-reacted-messages")),

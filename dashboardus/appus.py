@@ -1,5 +1,3 @@
-# discordboy/dashboardus/appus.py
-
 import dash
 import dash_bootstrap_components as dbc
 
@@ -9,7 +7,7 @@ from .layoutus import create_layout
 EXTERNAL_STYLESHEETS = [dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME]
 
 
-def create_app(df, role_colors_map, member_data, role_names_map):
+def create_app(df, member_data, role_data, mudae_channel_ids):
     app = dash.Dash(
         __name__,
         external_stylesheets=EXTERNAL_STYLESHEETS,
@@ -20,6 +18,6 @@ def create_app(df, role_colors_map, member_data, role_names_map):
     app.title = "Virgule du 4'"
     app.layout = create_layout(df)
 
-    register_callbacks(app, df, role_colors_map, member_data, role_names_map)
+    register_callbacks(app, df, member_data, role_data, mudae_channel_ids)
 
     return app

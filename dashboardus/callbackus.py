@@ -1,5 +1,3 @@
-# discordboy/dashboardus/callbackus.py
-
 import calendar
 from datetime import datetime, timedelta
 
@@ -51,8 +49,7 @@ HEADER_STYLE_FULL = {
 }
 
 
-def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
-
+def register_callbacks(app, df, member_data, role_data, mudae_channel_ids):
     days_order = [
         "Monday",
         "Tuesday",
@@ -86,16 +83,23 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         "December",
     ]
 
+    mudae_ids_set = set(int(id_str) for id_str in mudae_channel_ids)
+
+    role_colors_map = {
+        rid: rdata["color"]
+        for rid, rdata in role_data.items()
+        if rdata["color"] != "#000000"
+    }
+    role_names_map = {rid: rdata["name"] for rid, rdata in role_data.items()}
+
     if not df.empty:
         user_id_to_name_map = (
             df.drop_duplicates(subset=["author_id"])
             .set_index("author_id")["author_name"]
             .to_dict()
         )
-        name_to_user_id_map = {v: k for k, v in user_id_to_name_map.items()}
     else:
         user_id_to_name_map = {}
-        name_to_user_id_map = {}
 
     user_id_to_color_map = {
         str(uid): data.get("top_role_color", "#6c757d")
@@ -198,6 +202,7 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         Input("virgule-filter", "value"),
         Input("distribution-time-unit", "value"),
         Input("daily-leaderboard-toggle", "value"),
+        Input("mudae-filter-switch", "value"),
         State("date-picker-range", "min_date_allowed"),
         State("date-picker-range", "max_date_allowed"),
     )
@@ -213,14 +218,19 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         virgule_filter,
         dist_time_unit,
         daily_toggle,
+        mudae_switch_value,
         min_date_allowed,
         max_date_allowed,
     ):
-
         ctx = dash.callback_context
         triggered_id = (
             ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
         )
+
+        if not mudae_switch_value:
+            base_df = df[~df["channel_id"].isin(mudae_ids_set)]
+        else:
+            base_df = df
 
         new_top_n_value = top_n
         if triggered_id == "user-dropdown":
@@ -239,8 +249,8 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         elif triggered_id == "date-range-dropdown":
             today = datetime.now()
             if date_range_period == "all-time":
-                output_start_date = df["timestamp"].min().date()
-                output_end_date = df["timestamp"].max().date()
+                output_start_date = base_df["timestamp"].min().date()
+                output_end_date = base_df["timestamp"].max().date()
             elif date_range_period == "current_year":
                 output_start_date, output_end_date = (
                     today.replace(month=1, day=1).date(),
@@ -248,16 +258,14 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
                 )
             elif date_range_period == "last_365":
                 output_start_date, output_end_date = (
-                    today - timedelta(days=365)
-                ).date(), today.date()
+                    (today - timedelta(days=365)).date(),
+                    today.date(),
+                )
             elif date_range_period == "last_6_months":
                 output_start_date, output_end_date = (
-                    today - timedelta(days=180)
-                ).date(), today.date()
-            elif date_range_period == "last_month":
-                output_start_date, output_end_date = (
-                    today - timedelta(days=30)
-                ).date(), today.date()
+                    (today - timedelta(days=180)).date(),
+                    today.date(),
+                )
 
         start_date_utc = pd.to_datetime(output_start_date, utc=True)
         end_date_utc = pd.to_datetime(output_end_date, utc=True).replace(
@@ -265,11 +273,15 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         )
 
         if virgule_filter == "virgule_only":
-            df_filtered_by_role = df[df["author_name"].isin(virgule_author_names)]
+            df_filtered_by_role = base_df[
+                base_df["author_name"].isin(virgule_author_names)
+            ]
         elif virgule_filter == "no_virgule":
-            df_filtered_by_role = df[df["author_name"].isin(non_virgule_author_names)]
+            df_filtered_by_role = base_df[
+                base_df["author_name"].isin(non_virgule_author_names)
+            ]
         else:
-            df_filtered_by_role = df
+            df_filtered_by_role = base_df
 
         dff = df_filtered_by_role[
             (df_filtered_by_role["timestamp"] >= start_date_utc)
@@ -320,6 +332,7 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
                 "metric-selector",
                 "date-range-dropdown",
                 "virgule-filter",
+                "mudae-filter-switch",
             ]
             or triggered_id is None
         ):
@@ -336,12 +349,12 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
             user_value = []
 
         user_id_map_full = (
-            df.drop_duplicates(subset=["author_name"])
+            base_df.drop_duplicates(subset=["author_name"])
             .set_index("author_name")["author_id"]
             .to_dict()
         )
         name_to_original_map = (
-            df.drop_duplicates(subset=["author_name"])
+            base_df.drop_duplicates(subset=["author_name"])
             .set_index("author_name")["original_author_name"]
             .to_dict()
         )
@@ -429,10 +442,12 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
             }
         )
         empty_leaderboard = html.P(
-            "No data available for this period.", className="text-center text-muted p-4"
+            "No data available for this period.",
+            className="text-center text-muted p-4",
         )
         empty_list_component = html.Div(
-            "No data available for this period.", className="text-center text-muted p-4"
+            "No data available for this period.",
+            className="text-center text-muted p-4",
         )
 
         if dff.empty:
@@ -934,7 +949,7 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         return html.Ul(items, className="list-group list-group-flush")
 
     def create_daily_leaderboard(
-        dff, metric_selected, view_mode, start_date_utc, end_date_utc, color_map
+        dff, metric_selected, view_mode, start_date_utc, end_date_utc, color_map_by_name
     ):
         if dff.empty:
             return html.P("No data.", className="text-center p-3")
@@ -990,7 +1005,7 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
 
             color_winner_map = {}
             for date, name in winner_map.items():
-                color_winner_map[date] = color_map.get(name, "#6c757d")
+                color_winner_map[date] = color_map_by_name.get(name, "#6c757d")
 
             return html.Div(
                 generate_calendars(
@@ -1088,7 +1103,7 @@ def register_callbacks(app, df, role_colors_map, member_data, role_names_map):
         return months
 
     def create_most_mentioned_graph(
-        dff, user_id_map, color_map, role_names_map, user_id_map_full
+        dff, user_id_map, color_map_by_name, role_names_map, user_id_map_full
     ):
         if dff.empty:
             return go.Figure(

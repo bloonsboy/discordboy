@@ -11,3 +11,9 @@ pycache/
 venv/
 env/
 .venv/
+
+# Data files
+.parquet
+.csv
+.json
+.db
