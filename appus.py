@@ -6,10 +6,10 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 
-from discordboy.corus.botus import run_bot
-from discordboy.corus.processus import process_and_save_stats
-from discordboy.dashboardus.appus import create_app
-from discordboy.dataus.constant import (
+from corus.botus import run_bot
+from corus.processus import process_and_save_stats
+from dashboardus.appus import create_app
+from dataus.constant import (
     CACHE_FILENAME,
     DATA_DIR,
     EXCLUDED_CHANNEL_IDS,
