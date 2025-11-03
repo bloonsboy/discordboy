@@ -1,5 +1,3 @@
-# discordboy/corus/botus.py
-
 import asyncio
 import json
 import logging
@@ -8,8 +6,6 @@ from datetime import datetime
 
 import discord
 import pandas as pd
-
-from discordboy.dataus.constant import EXCLUDED_CHANNEL_IDS
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -89,6 +85,10 @@ async def fetch_channel_messages_as_df(channel, cache_df):
             logging.info(
                 f"[END] Fetching #{channel.name} finished. {message_count} new messages retrieved."
             )
+        elif after_date is not None:
+            pass
+        else:
+            logging.info(f"[END] Fetching #{channel.name} finished. 0 messages found.")
 
     except discord.errors.Forbidden:
         logging.warning(f"No access to channel #{channel.name}. Skipping.")
@@ -98,8 +98,7 @@ async def fetch_channel_messages_as_df(channel, cache_df):
     return pd.DataFrame(messages_data)
 
 
-async def run_bot_logic(data_dir, cache_file, role_color_file, role_name_file):
-    logging.info(f"Fetching data for server '{client.guilds[0].name}'...")
+async def run_bot_logic(data_dir, cache_file, role_data_file):
     guild = client.guilds[0]
 
     start_chunk = datetime.now()
@@ -121,24 +120,18 @@ async def run_bot_logic(data_dir, cache_file, role_color_file, role_name_file):
             ),
         }
 
-    role_colors_map = {
-        str(role.id): str(role.color)
+    role_data = {
+        str(role.id): {"name": role.name, "color": str(role.color)}
         for role in guild.roles
-        if str(role.color) != "#000000"
     }
-    role_names_map = {str(role.id): role.name for role in guild.roles}
 
     os.makedirs(data_dir, exist_ok=True)
-    role_color_path = os.path.join(data_dir, role_color_file)
-    role_name_path = os.path.join(data_dir, role_name_file)
+    role_data_path = os.path.join(data_dir, role_data_file)
 
     try:
-        with open(role_color_path, "w", encoding="utf-8") as f:
-            json.dump(role_colors_map, f, ensure_ascii=False, indent=4)
-
-        with open(role_name_path, "w", encoding="utf-8") as f:
-            json.dump(role_names_map, f, ensure_ascii=False, indent=4)
-
+        with open(role_data_path, "w", encoding="utf-8") as f:
+            json.dump(role_data, f, ensure_ascii=False, indent=4)
+        logging.info(f"Role data saved to {role_data_path}.")
     except IOError as e:
         logging.error(f"Error writing role file: {e}")
 
@@ -146,7 +139,6 @@ async def run_bot_logic(data_dir, cache_file, role_color_file, role_name_file):
     cache_df = None
     if os.path.exists(cache_path):
         try:
-            logging.info(f"Loading cache from {cache_path}...")
             cache_df = pd.read_parquet(cache_path)
             cache_df["timestamp"] = pd.to_datetime(cache_df["timestamp"])
         except Exception as e:
@@ -159,9 +151,7 @@ async def run_bot_logic(data_dir, cache_file, role_color_file, role_name_file):
         c
         for c in guild.text_channels
         if c.permissions_for(guild.me).read_message_history
-        and str(c.id) not in EXCLUDED_CHANNEL_IDS
     ]
-    logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
 
     tasks = [
         fetch_channel_messages_as_df(channel, cache_df) for channel in text_channels
@@ -169,14 +159,14 @@ async def run_bot_logic(data_dir, cache_file, role_color_file, role_name_file):
 
     all_dfs = await asyncio.gather(*tasks)
 
-    non_empty_dfs = [df for df in all_dfs if not df.empty]
+    valid_dfs = [df for df in all_dfs if not df.empty]
 
-    if non_empty_dfs:
-        new_data_df = pd.concat(non_empty_dfs, ignore_index=True)
+    if not valid_dfs and cache_df is None:
+        final_df = pd.DataFrame()
+    elif not valid_dfs and cache_df is not None:
+        final_df = cache_df
     else:
-        new_data_df = pd.DataFrame()
-
-    if not new_data_df.empty or cache_df is None:
+        new_data_df = pd.concat(valid_dfs, ignore_index=True)
         if cache_df is not None:
             final_df = pd.concat(
                 [cache_df, new_data_df], ignore_index=True
@@ -188,16 +178,12 @@ async def run_bot_logic(data_dir, cache_file, role_color_file, role_name_file):
             final_df.to_parquet(cache_path, index=False)
         except Exception as e:
             logging.error(f"Error saving parquet file: {e}")
-    else:
-        final_df = cache_df
 
     await client.close()
 
     global bot_data_future
     if bot_data_future:
-        bot_data_future.set_result(
-            (final_df, role_colors_map, member_data, role_names_map)
-        )
+        bot_data_future.set_result((final_df, member_data, role_data))
 
 
 @client.event
@@ -206,29 +192,27 @@ async def on_ready():
         run_bot_logic(
             client.data_dir,
             client.cache_file,
-            client.role_color_file,
-            client.role_name_file,
+            client.role_data_file,
         )
     )
 
 
-async def run_bot(token, data_dir, cache_file, role_color_file, role_name_file):
+async def run_bot(token, data_dir, cache_file, role_data_file):
     global bot_data_future
     bot_data_future = asyncio.Future()
 
     client.data_dir = data_dir
     client.cache_file = cache_file
-    client.role_color_file = role_color_file
-    client.role_name_file = role_name_file
+    client.role_data_file = role_data_file
 
     try:
         await client.start(token)
     except discord.LoginFailure:
         logging.error("Invalid Discord token. Please check your .env file.")
-        bot_data_future.set_result((pd.DataFrame(), {}, {}, {}))
+        bot_data_future.set_result((pd.DataFrame(), {}, {}))
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         if not bot_data_future.done():
-            bot_data_future.set_result((pd.DataFrame(), {}, {}, {}))
+            bot_data_future.set_result((pd.DataFrame(), {}, {}))
 
     return await bot_data_future
