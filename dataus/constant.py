@@ -3,8 +3,7 @@
 # Constants for DiscordBoy data processing and storage
 DATA_DIR = "dataus"
 CACHE_FILENAME = "discord_messages_cache.parquet"
-ROLE_COLORS_FILENAME = "role_colors.json"
-ROLE_NAMES_FILENAME = "role_names.json"
+ROLE_DATA_FILENAME = "role_data.json"
 STATS_FILENAME = "discord_server_stats.csv"
 MIN_MESSAGE_COUNT = 0
 
