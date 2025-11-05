@@ -13,6 +13,7 @@ env/
 .venv/
 discvenv/
 .discvenv/
+discordboy.egg-info/
 
 # Data files
 .parquet
