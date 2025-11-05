@@ -11,6 +11,8 @@ pycache/
 venv/
 env/
 .venv/
+discvenv/
+.discvenv/
 
 # Data files
 .parquet
