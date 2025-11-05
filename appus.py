@@ -7,7 +7,6 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from corus.botus import run_bot
-from corus.processus import process_and_save_stats
 from dashboardus.appus import create_app
 from dataus.constant import (
     CACHE_FILENAME,
@@ -17,8 +16,8 @@ from dataus.constant import (
     IDS_TO_EXCLUDE,
     MIN_MESSAGE_COUNT,
     ROLE_DATA_FILENAME,
-    SMURF_IDS,
     STATS_FILENAME,
+    SMURF_IDS,
 )
 
 logging.basicConfig(
@@ -29,6 +28,28 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def process_and_save_stats(df, filename):
+    if df.empty:
+        return pd.DataFrame()
+
+    df_copy = df.copy()
+    df_copy["timestamp"] = pd.to_datetime(df_copy["timestamp"])
+    df_copy["year"] = df_copy["timestamp"].dt.year
+    yearly_counts = (
+        df_copy.groupby(["author_name", "year"]).size().unstack(fill_value=0)
+    )
+    yearly_counts["total_messages"] = yearly_counts.sum(axis=1)
+    final_csv_df = yearly_counts.reset_index().sort_values(
+        "total_messages", ascending=False
+    )
+    count_cols = [col for col in final_csv_df.columns if col not in ["author_name"]]
+    final_csv_df[count_cols] = final_csv_df[count_cols].astype(int)
+
+    final_csv_df.to_csv(filename, index=False)
+
+    return df
 
 
 def prepare_dataframe(df, member_data):
@@ -100,7 +121,10 @@ async def main():
         return
 
     dashboard_df, member_data, role_data = await run_bot(
-        DISCORD_TOKEN, DATA_DIR, CACHE_FILENAME, ROLE_DATA_FILENAME
+        DISCORD_TOKEN,
+        DATA_DIR,
+        CACHE_FILENAME,
+        ROLE_DATA_FILENAME,
     )
 
     if not dashboard_df.empty:

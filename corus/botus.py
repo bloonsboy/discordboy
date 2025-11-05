@@ -7,6 +7,8 @@ from datetime import datetime
 import discord
 import pandas as pd
 
+from dataus.constant import EXCLUDED_CHANNEL_IDS
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
