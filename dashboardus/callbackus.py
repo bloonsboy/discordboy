@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 from dash import html
 from dash.dependencies import Input, Output, State
 
+from dataus.constant import EXCLUDED_CHANNEL_IDS
+
 SIDEBAR_STYLE = {
     "position": "fixed",
     "top": 0,
