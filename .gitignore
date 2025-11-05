@@ -19,3 +19,7 @@ discvenv/
 .csv
 .json
 .db
+
+# Test files
+playground.ipynb
+tests/playground.ipynb
