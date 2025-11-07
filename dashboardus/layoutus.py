@@ -8,10 +8,11 @@ from .callbackus import CONTENT_STYLE_FULL, HEADER_STYLE_FULL, SIDEBAR_HIDDEN
 
 def create_layout(df):
     if df.empty:
-        return html.Div("No data available to display.")
-
-    min_date = df["timestamp"].min().date()
-    max_date = df["timestamp"].max().date()
+        min_date = datetime.now().date()
+        max_date = datetime.now().date()
+    else:
+        min_date = df["timestamp"].min().date()
+        max_date = df["timestamp"].max().date()
 
     sidebar = html.Div(
         [
@@ -331,7 +332,7 @@ def create_layout(df):
                                     dbc.CardBody(
                                         [
                                             html.H5(
-                                                "Most Mentioned (Users & Roles)",
+                                                "Most Mentioned Users (@)",
                                                 className="card-title",
                                             ),
                                             dcc.Loading(
@@ -350,7 +351,7 @@ def create_layout(df):
                         dbc.CardBody(
                             [
                                 html.H5(
-                                    "Top 10 Reacted Messages (Unique Users)",
+                                    "Top 10 Reacted Messages (Total Reactions)",
                                     className="card-title",
                                 ),
                                 dcc.Loading(html.Div(id="top-reacted-messages")),
