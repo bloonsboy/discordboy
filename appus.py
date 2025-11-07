@@ -12,10 +12,9 @@ from dataus.constant import (
     CACHE_FILENAME,
     DATA_DIR,
     EXCLUDED_CHANNEL_IDS,
-    NAME_REPLACE_MAP,
     IDS_TO_EXCLUDE,
     MIN_MESSAGE_COUNT,
-    ROLE_DATA_FILENAME,
+    SERVER_DATA_FILENAME,
     STATS_FILENAME,
     SMURF_IDS,
 )
@@ -47,23 +46,32 @@ def process_and_save_stats(df, filename):
     count_cols = [col for col in final_csv_df.columns if col not in ["author_name"]]
     final_csv_df[count_cols] = final_csv_df[count_cols].astype(int)
 
-    final_csv_df.to_csv(filename, index=False)
+    try:
+        final_csv_df.to_csv(filename, index=False)
+    except IOError as e:
+        logging.error(f"Failed to save stats CSV: {e}")
 
     return df
 
 
-def prepare_dataframe(df, member_data):
+def prepare_dataframe(df, server_data):
     logging.info("Preparing DataFrame for dashboard...")
     if df.empty:
         logging.warning("DataFrame is empty, skipping preparation.")
-        return df, member_data
+        return df
 
     df_copy = df.copy()
 
-    df_copy["original_author_name"] = df_copy["author_name"]
+    author_map = {int(k): v["name"] for k, v in server_data.get("authors", {}).items()}
+    channel_map = {
+        int(k): v["name"] for k, v in server_data.get("channels", {}).items()
+    }
 
-    id_mapped_names = df_copy["author_id"].map(NAME_REPLACE_MAP)
-    df_copy["author_name"] = id_mapped_names.fillna(df_copy["original_author_name"])
+    df_copy["author_name"] = df_copy["author_id"].map(author_map)
+    df_copy["channel_name"] = df_copy["channel_id"].map(channel_map)
+
+    df_copy = df_copy.dropna(subset=["author_name"])
+    df_copy["created_at"] = pd.to_datetime(df_copy["created_at"])
 
     EXCLUDE_LIST = list(IDS_TO_EXCLUDE) + list(SMURF_IDS)
     df_copy = df_copy[~df_copy["author_id"].isin(EXCLUDE_LIST)]
@@ -77,42 +85,41 @@ def prepare_dataframe(df, member_data):
         active_user_count = len(df_copy["author_name"].unique())
 
     for col in [
-        "character_count",
-        "reaction_count",
-        "attachment_count",
-        "sticker_count",
+        "len_content",
+        "total_reaction_count",
+        "attachments",
+        "embeds",
     ]:
         if col in df_copy.columns:
             df_copy[col] = df_copy[col].fillna(0).astype(int)
         else:
             df_copy[col] = 0
 
-    for col in ["mentioned_user_ids", "mentioned_role_ids"]:
+    for col in ["mentions", "mentioned_role_ids", "reactions"]:
         if col in df_copy.columns:
-            df_copy[col] = df_copy[col].apply(
-                lambda x: x if isinstance(x, list) else []
+            df_copy[col] = (
+                df_copy[col]
+                .fillna("[]")
+                .apply(lambda x: x if isinstance(x, (list, str)) else "[]")
             )
         else:
-            df_copy[col] = pd.Series(
-                [[] for _ in range(len(df_copy))], index=df_copy.index, dtype="object"
-            )
+            df_copy[col] = "[]"
 
     for col in [
-        "replied_to_author_id",
-        "thread_id",
-        "thread_name",
-        "message_type",
+        "edited_at",
+        "pinned",
         "content",
         "jump_url",
-        "channel_id",
     ]:
         if col not in df_copy.columns:
             df_copy[col] = pd.NA
 
+    df_copy.rename(columns={"created_at": "timestamp"}, inplace=True)
+
     logging.info(
         f"Preparation complete. {len(df_copy)} messages and {active_user_count} active users retained."
     )
-    return df_copy, member_data
+    return df_copy
 
 
 async def main():
@@ -120,17 +127,17 @@ async def main():
         logging.error("DISCORD_TOKEN is not set! Please check your .env file.")
         return
 
-    dashboard_df, member_data, role_data = await run_bot(
+    logging.info("Starting Discord data collection process...")
+    dashboard_df, server_data = await run_bot(
         DISCORD_TOKEN,
         DATA_DIR,
         CACHE_FILENAME,
-        ROLE_DATA_FILENAME,
+        SERVER_DATA_FILENAME,
     )
 
     if not dashboard_df.empty:
-        processed_df, processed_member_data = prepare_dataframe(
-            dashboard_df, member_data
-        )
+        logging.info("Data collection finished. Preparing data for dashboard...")
+        processed_df = prepare_dataframe(dashboard_df, server_data)
 
         if processed_df.empty:
             logging.warning(
@@ -142,8 +149,7 @@ async def main():
 
         app = create_app(
             processed_df,
-            processed_member_data,
-            role_data,
+            server_data,
             EXCLUDED_CHANNEL_IDS,
         )
         logging.info("Launching Dash web server on http://localhost:8050/")

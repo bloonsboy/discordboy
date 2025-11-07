@@ -1,9 +1,8 @@
 # discordboy/dataus/constant.py
 
-# Constants for DiscordBoy data processing and storage
 DATA_DIR = "dataus"
 CACHE_FILENAME = "discord_messages_cache.parquet"
-ROLE_DATA_FILENAME = "role_data.json"
+SERVER_DATA_FILENAME = "server_data.json"
 STATS_FILENAME = "discord_server_stats.csv"
 MIN_MESSAGE_COUNT = 0
 
@@ -30,7 +29,7 @@ SMURF_IDS = [
 ]
 
 
-NAME_REPLACE_MAP = {
+ID_NAME_MAP = {
     "157131660788367360": "Adrien",
     "532618558128128020": "Aimen",
     "237640715549671424": "Aku",
