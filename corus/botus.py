@@ -7,7 +7,6 @@ from datetime import datetime
 
 import discord
 import pandas as pd
-
 from dataus.constant import DATA_DIR, ID_NAME_MAP, SERVER_DATA_FILENAME
 
 logging.basicConfig(
@@ -15,12 +14,11 @@ logging.basicConfig(
 )
 
 intents = discord.Intents.all()
-
 client = discord.Client(intents=intents)
 bot_data_future = None
 
 
-def get_len_content(content_str):
+def get_len_content(content_str: str) -> int:
     if not content_str:
         return 0
     content_no_custom_emote = re.sub(r"<a?:\w+:\d+>", "E", content_str)
@@ -28,7 +26,7 @@ def get_len_content(content_str):
     return len(content_no_space)
 
 
-async def fetch_channel_messages_as_df(channel, cache_df):
+async def fetch_channel_messages_as_df(channel: discord.TextChannel, cache_df: pd.DataFrame) -> pd.DataFrame:
     after_date = None
     if cache_df is not None and not cache_df.empty:
         channel_messages = cache_df[cache_df["channel_id"] == channel.id]
@@ -90,13 +88,8 @@ async def fetch_channel_messages_as_df(channel, cache_df):
     return pd.DataFrame(messages_data)
 
 
-async def run_bot_logic(data_dir, cache_file, server_data_file):
-    logging.info(f"Fetching data for server '{client.guilds[0].name}'...")
+async def run_bot_logic(data_dir: str, cache_file: str, server_data_file: str)  -> None:
     guild = client.guilds[0]
-
-    logging.info(
-        f"This operation (guild.chunk) can take several minutes on large servers..."
-    )
     start_chunk = datetime.now()
     await guild.chunk(cache=True)
     end_chunk = datetime.now()
@@ -138,7 +131,6 @@ async def run_bot_logic(data_dir, cache_file, server_data_file):
     try:
         with open(server_data_path, "w", encoding="utf-8") as f:
             json.dump(server_data, f, ensure_ascii=False, indent=4)
-        logging.info(f"Server data map saved to {server_data_path}.")
     except IOError as e:
         logging.error(f"Error writing server data file: {e}")
 
@@ -166,16 +158,12 @@ async def run_bot_logic(data_dir, cache_file, server_data_file):
     ]
 
     all_dfs = await asyncio.gather(*tasks)
-    logging.info(f"Finished fetching data from all channels.")
-
     valid_dfs = [df for df in all_dfs if not df.empty]
 
     if not valid_dfs and cache_df is None:
         final_df = pd.DataFrame()
-        logging.info("No new messages and no cache. Resulting DataFrame is empty.")
     elif not valid_dfs and cache_df is not None:
         final_df = cache_df
-        logging.info("No new messages found. Using existing cache.")
     else:
         new_data_df = pd.concat(valid_dfs, ignore_index=True)
         if cache_df is not None:
@@ -188,15 +176,11 @@ async def run_bot_logic(data_dir, cache_file, server_data_file):
             final_df = new_data_df
 
         try:
-            logging.info(f"Saving updated cache to {cache_path}...")
             final_df.to_parquet(cache_path, index=False)
-            logging.info(f"Save complete.")
         except Exception as e:
             logging.error(f"Error saving parquet file: {e}")
 
     await client.close()
-    logging.info("Discord client closed.")
-
     global bot_data_future
     if bot_data_future:
         bot_data_future.set_result((final_df, server_data))
@@ -214,7 +198,7 @@ async def on_ready():
     )
 
 
-async def run_bot(token, data_dir, cache_file, server_data_file):
+async def run_bot(token: str, data_dir: str, cache_file: str, server_data_file: str) -> None:
     global bot_data_future
     bot_data_future = asyncio.Future()
 
@@ -223,7 +207,6 @@ async def run_bot(token, data_dir, cache_file, server_data_file):
     client.server_data_file = server_data_file
 
     try:
-        logging.info("Starting Discord client...")
         await client.start(token)
     except discord.LoginFailure:
         logging.error("Invalid Discord token. Please check your .env file.")

@@ -4,20 +4,12 @@ import logging
 import os
 
 import pandas as pd
-from dotenv import load_dotenv
-
 from corus.botus import run_bot
 from dashboardus.appus import create_app
-from dataus.constant import (
-    CACHE_FILENAME,
-    DATA_DIR,
-    EXCLUDED_CHANNEL_IDS,
-    IDS_TO_EXCLUDE,
-    MIN_MESSAGE_COUNT,
-    SERVER_DATA_FILENAME,
-    STATS_FILENAME,
-    SMURF_IDS,
-)
+from dataus.constant import (CACHE_FILENAME, DATA_DIR, EXCLUDED_CHANNEL_IDS,
+                             IDS_TO_EXCLUDE, MIN_MESSAGE_COUNT,
+                             SERVER_DATA_FILENAME, SMURF_IDS, STATS_FILENAME)
+from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -29,7 +21,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def process_and_save_stats(df, filename):
+def process_and_save_stats(df: pd.DataFrame, filename: str) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
@@ -54,8 +46,7 @@ def process_and_save_stats(df, filename):
     return df
 
 
-def prepare_dataframe(df, server_data):
-    logging.info("Preparing DataFrame for dashboard...")
+def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     if df.empty:
         logging.warning("DataFrame is empty, skipping preparation.")
         return df
@@ -127,7 +118,6 @@ async def main():
         logging.error("DISCORD_TOKEN is not set! Please check your .env file.")
         return
 
-    logging.info("Starting Discord data collection process...")
     dashboard_df, server_data = await run_bot(
         DISCORD_TOKEN,
         DATA_DIR,
@@ -136,7 +126,6 @@ async def main():
     )
 
     if not dashboard_df.empty:
-        logging.info("Data collection finished. Preparing data for dashboard...")
         processed_df = prepare_dataframe(dashboard_df, server_data)
 
         if processed_df.empty:

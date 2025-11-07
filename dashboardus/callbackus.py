@@ -1,6 +1,7 @@
 import calendar
-from datetime import datetime, timedelta
 import json
+from datetime import datetime, timedelta
+
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -8,7 +9,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import html
 from dash.dependencies import Input, Output, State
-
 from dataus.constant import EXCLUDED_CHANNEL_IDS
 
 SIDEBAR_STYLE = {
@@ -51,7 +51,9 @@ HEADER_STYLE_FULL = {
 }
 
 
-def register_callbacks(app, df, server_data_map, mudae_channel_ids):
+def register_callbacks(
+    app: dash.Dash, df: pd.DataFrame, server_data_map: dict, mudae_channel_ids: list
+) -> None:
     days_order = [
         "Monday",
         "Tuesday",
@@ -117,7 +119,7 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         else:
             non_virgule_author_ids.add(user_id_int)
 
-    def is_light_color(hex_color):
+    def is_light_color(hex_color: str) -> bool:
         try:
             if not isinstance(hex_color, str):
                 return True
@@ -138,7 +140,7 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         Input("open-filter-sidebar", "n_clicks"),
         State("sidebar-state-store", "data"),
     )
-    def toggle_sidebar(n, is_open):
+    def toggle_sidebar(n: int, is_open: bool) -> tuple:
         if n:
             is_open = not is_open
 
@@ -158,7 +160,7 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         Input("date-picker-range", "start_date"),
         Input("date-picker-range", "end_date"),
     )
-    def display_date_range_duration(start_date, end_date):
+    def display_date_range_duration(start_date: str, end_date: str) -> str:
         if not start_date or not end_date:
             return ""
         start = datetime.strptime(start_date.split("T")[0], "%Y-%m-%d")
@@ -204,21 +206,21 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         State("date-picker-range", "max_date_allowed"),
     )
     def update_all(
-        selected_user_names,
-        start_date,
-        end_date,
-        top_n,
-        metric_selected,
-        evolution_view,
-        highlighted_user_name,
-        date_range_period,
-        virgule_filter,
-        dist_time_unit,
-        daily_toggle,
-        mudae_switch_value,
-        min_date_allowed,
-        max_date_allowed,
-    ):
+        selected_user_names: list[str],
+        start_date: str,
+        end_date: str,
+        top_n: int,
+        metric_selected: str,
+        evolution_view: str,
+        highlighted_user_name: str,
+        date_range_period: str,
+        virgule_filter: str,
+        dist_time_unit: str,
+        daily_toggle: bool,
+        mudae_switch_value: bool,
+        min_date_allowed: str,
+        max_date_allowed: str,
+    ) -> tuple:
         ctx = dash.callback_context
         triggered_id = (
             ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
@@ -272,6 +274,11 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
             elif date_range_period == "last_6_months":
                 output_start_date, output_end_date = (
                     (today - timedelta(days=180)).date(),
+                    today.date(),
+                )
+            elif date_range_period == "last_3_months":
+                output_start_date, output_end_date = (
+                    (today - timedelta(days=90)).date(),
                     today.date(),
                 )
 
@@ -517,7 +524,12 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
             top_reactions_component,
         )
 
-    def create_user_profile_card(user_name, dff, user_counts_period, metric_selected):
+    def create_user_profile_card(
+        user_name: str,
+        dff: pd.DataFrame,
+        user_counts_period: pd.Series,
+        metric_selected: str,
+    ) -> html.Div:
         user_df = dff[dff["author_name"] == user_name]
         if user_df.empty:
             return []
@@ -588,8 +600,11 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         )
 
     def create_cumulative_graph(
-        dff_filtered, color_map, metric_selected, highlighted_user
-    ):
+        dff_filtered: pd.DataFrame,
+        color_map: dict,
+        metric_selected: str,
+        highlighted_user: str,
+    ) -> go.Figure:
         if dff_filtered.empty:
             return go.Figure()
 
@@ -709,7 +724,9 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
 
         return fig
 
-    def create_median_length_graph(dff_filtered, dff, color_map):
+    def create_median_length_graph(
+        dff_filtered: pd.DataFrame, dff: pd.DataFrame, color_map: dict
+    ) -> go.Figure:
         if dff_filtered.empty:
             return go.Figure(
                 layout={
@@ -785,13 +802,13 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         return fig
 
     def create_distribution_graph(
-        dff_filtered,
-        dff,
-        user_counts_period,
-        color_map,
-        time_unit,
-        metric_selected,
-    ):
+        dff_filtered: pd.DataFrame,
+        dff: pd.DataFrame,
+        user_counts_period: pd.Series,
+        color_map: dict,
+        time_unit: str,
+        metric_selected: str,
+    ) -> go.Figure:
         top_users = user_counts_period.nlargest(3).index.tolist()
         dff_top = dff_filtered[dff_filtered["author_name"].isin(top_users)]
 
@@ -887,7 +904,13 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         fig.update_xaxes(categoryorder="array", categoryarray=categories)
         return fig
 
-    def create_leaderboard(dff, period, metric_name, date_format, metric_selected):
+    def create_leaderboard(
+        dff: pd.DataFrame,
+        period: str,
+        metric_name: str,
+        date_format: str,
+        metric_selected: str,
+    ) -> html.Ul:
         if dff.empty:
             return html.P("No data.", className="text-center p-3")
 
@@ -933,8 +956,13 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         return html.Ul(items, className="list-group list-group-flush")
 
     def create_daily_leaderboard(
-        dff, metric_selected, view_mode, start_date_utc, end_date_utc, color_map
-    ):
+        dff: pd.DataFrame,
+        metric_selected: str,
+        view_mode: str,
+        start_date_utc: pd.Timestamp,
+        end_date_utc: pd.Timestamp,
+        color_map: dict,
+    ) -> html.Div:
         if dff.empty:
             return html.P("No data.", className="text-center p-3")
 
@@ -999,7 +1027,12 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
                 style={"maxHeight": "500px", "overflowY": "auto"},
             )
 
-    def generate_calendars(start_date, end_date, winner_map, color_map):
+    def generate_calendars(
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+        winner_map: dict,
+        color_map: dict,
+    ) -> list:
         start = start_date.date()
         end = end_date.date()
 
@@ -1087,8 +1120,11 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         return months
 
     def create_most_mentioned_graph(
-        dff, color_map, user_id_to_name_map, role_names_map
-    ):
+        dff: pd.DataFrame,
+        color_map: dict,
+        user_id_to_name_map: dict,
+        role_names_map: dict,
+    ) -> go.Figure:
         if dff.empty:
             return go.Figure(
                 layout={
@@ -1141,7 +1177,7 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
             list(mention_counts.items()), columns=["id", "count"]
         )
 
-        def map_name(id_str):
+        def map_name(id_str: str) -> str | None:
             type_str, id_val = id_str.split("_", 1)
             if type_str == "user":
                 try:
@@ -1203,7 +1239,9 @@ def register_callbacks(app, df, server_data_map, mudae_channel_ids):
         )
         return fig
 
-    def create_top_reactions_list(dff, user_id_to_color_map, current_member_ids_int):
+    def create_top_reactions_list(
+        dff: pd.DataFrame, user_id_to_color_map: dict, current_member_ids_int: set
+    ) -> html.Ul:
         if dff.empty or "total_reaction_count" not in dff.columns:
             return html.P(
                 "No reaction data available for this period.",

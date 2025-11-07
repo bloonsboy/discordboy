@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta
 
 import dash_bootstrap_components as dbc
+import pandas as pd
 from dash import dcc, html
 
 from .callbackus import CONTENT_STYLE_FULL, HEADER_STYLE_FULL, SIDEBAR_HIDDEN
 
 
-def create_layout(df):
+def create_layout(df: pd.DataFrame) -> html.Div:
     if df.empty:
         min_date = datetime.now().date()
         max_date = datetime.now().date()
@@ -96,6 +97,10 @@ def create_layout(df):
                                     {
                                         "label": "Last 6 Months",
                                         "value": "last_6_months",
+                                    },
+                                    {
+                                        "label": "Last 3 Months",
+                                        "value": "last_3_months",
                                     },
                                     {"label": "All-time", "value": "all-time"},
                                 ],
@@ -492,7 +497,7 @@ def create_layout(df):
     )
 
 
-def create_leaderboard_card(title, container_id):
+def create_leaderboard_card(title: str, container_id: str) -> dbc.Card:
     return dbc.Card(
         [
             dbc.CardHeader(html.H5(title, className="card-title mb-0")),
