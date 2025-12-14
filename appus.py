@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -6,9 +7,16 @@ import os
 import pandas as pd
 from corus.botus import run_bot
 from dashboardus.appus import create_app
-from dataus.constant import (CACHE_FILENAME, DATA_DIR, EXCLUDED_CHANNEL_IDS,
-                             IDS_TO_EXCLUDE, MIN_MESSAGE_COUNT,
-                             SERVER_DATA_FILENAME, SMURF_IDS, STATS_FILENAME)
+from dataus.constant import (
+    CACHE_FILENAME,
+    DATA_DIR,
+    EXCLUDED_CHANNEL_IDS,
+    IDS_TO_EXCLUDE,
+    MIN_MESSAGE_COUNT,
+    SERVER_DATA_FILENAME,
+    SMURF_IDS,
+    STATS_FILENAME,
+)
 from dotenv import load_dotenv
 
 logging.basicConfig(
@@ -114,15 +122,50 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
 
 
 async def main():
+    parser = argparse.ArgumentParser(description="Discord Activity Dashboard")
+    parser.add_argument(
+        "--server",
+        type=str,
+        default=None,
+        help="Name of the Discord server to scrape (e.g., --server 'Virgule du 4')",
+    )
+    parser.add_argument(
+        "--channels",
+        type=str,
+        default=None,
+        help="Comma-separated list of channel IDs to fetch (e.g., --channels 123456789,987654321)",
+    )
+    args = parser.parse_args()
+
     if not DISCORD_TOKEN:
         logging.error("DISCORD_TOKEN is not set! Please check your .env file.")
         return
+
+    server_name = args.server
+    if server_name:
+        logging.info(f"Will search for server: {server_name}")
+    else:
+        logging.info("No server specified. Will use the first available server.")
+
+    # Parse channel IDs if provided
+    channel_ids = None
+    if args.channels:
+        try:
+            channel_ids = [int(ch_id.strip()) for ch_id in args.channels.split(",")]
+            logging.info(f"Will fetch only channels: {channel_ids}")
+        except ValueError:
+            logging.error(
+                "Invalid channel IDs format. Please use comma-separated integers."
+            )
+            return
 
     dashboard_df, server_data = await run_bot(
         DISCORD_TOKEN,
         DATA_DIR,
         CACHE_FILENAME,
         SERVER_DATA_FILENAME,
+        server_name,
+        channel_ids,
     )
 
     if not dashboard_df.empty:
