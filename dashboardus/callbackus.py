@@ -1,6 +1,7 @@
 import calendar
 import json
 from datetime import datetime, timedelta
+from typing import Optional
 
 import dash
 import dash_bootstrap_components as dbc
@@ -129,7 +130,7 @@ def register_callbacks(
             rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
             luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
             return luminance > 0.5
-        except:
+        except (ValueError, TypeError):
             return True
 
     @app.callback(
@@ -1177,16 +1178,17 @@ def register_callbacks(
             list(mention_counts.items()), columns=["id", "count"]
         )
 
-        def map_name(id_str: str) -> str | None:
+        def map_name(id_str: str) -> Optional[str]:
             type_str, id_val = id_str.split("_", 1)
             if type_str == "user":
                 try:
                     return user_id_to_name_map.get(int(id_val))
-                except:
+                except (ValueError, TypeError):
                     return None
             elif type_str == "role":
                 name = role_names_map.get(id_val)
                 return f"@{name}" if name else None
+            return None
 
         mentions_df["name"] = mentions_df["id"].apply(map_name)
         mentions_df = mentions_df.dropna(subset=["name"])
