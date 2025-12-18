@@ -36,21 +36,20 @@ async def fetch_channel_messages_as_df(
         if not channel_messages.empty:
             after_date = pd.to_datetime(channel_messages["created_at"].max())
 
-    logging.info(
-        f"[START] Fetching #{channel.name} (after {after_date or 'beginning'})"
-    )
+    if after_date is None or await channel.history(limit=1, after=after_date).flatten():
+        logging.info(
+            f"Fetching #{channel.name} (after {after_date or ''})"
+        )
 
     messages_data = []
     messages_with_reactions = []
     message_count = 0
 
     try:
-        chunk_size = 5000
-        total_fetched = 0
-        last_message_id = None
+        chunk_size = 10000
         chunk_start = datetime.now()
 
-        async for message in channel.history(limit=None, after=after_date):
+        async for message in channel.history(limit=None, after=after_date, oldest_first=True):
             if message.author.bot:
                 continue
 
@@ -74,24 +73,20 @@ async def fetch_channel_messages_as_df(
                 }
             )
 
-            # If message has reactions, store reference for batch processing
             if message.reactions:
                 messages_with_reactions.append((message_count, message))
-
             message_count += 1
 
-            # Log progress every chunk_size messages
             if message_count % chunk_size == 0:
                 chunk_time = (datetime.now() - chunk_start).total_seconds()
                 rate = chunk_size / chunk_time if chunk_time > 0 else 0
                 logging.info(
-                    f"  #{channel.name}: {message_count} msgs fetched ({rate:.0f} msg/s)"
+                    f"  #{channel.name}: {message_count} messages fetched ({rate:.0f} messages/s)"
                 )
                 chunk_start = datetime.now()
+            await asyncio.sleep(0.02)
 
-        # Step 2: Batch process reactions only for messages that have them
         if messages_with_reactions:
-
             async def process_message_reactions(index, message):
                 unique_reactors = set()
                 reactions_summary = []
@@ -127,7 +122,6 @@ async def fetch_channel_messages_as_df(
 
                 return index, json.dumps(reactions_summary), len(unique_reactors)
 
-            # Process all messages with reactions in parallel
             reaction_tasks = [
                 process_message_reactions(idx, msg)
                 for idx, msg in messages_with_reactions
@@ -136,7 +130,6 @@ async def fetch_channel_messages_as_df(
                 *reaction_tasks, return_exceptions=True
             )
 
-            # Update messages_data with reaction information
             for update in reaction_updates:
                 if isinstance(update, tuple) and len(update) == 3:
                     idx, reactions_json, total_count = update
@@ -145,15 +138,15 @@ async def fetch_channel_messages_as_df(
 
         if message_count > 0:
             logging.info(
-                f"[END] Fetching #{channel.name} finished. {message_count} new messages retrieved."
+                f"#{channel.name} finished. {message_count} new messages."
             )
         elif after_date is not None:
             pass
         else:
-            logging.info(f"[END] Fetching #{channel.name} finished. 0 messages found.")
+            logging.info(f"Fetching #{channel.name} finished. 0 messages found.")
 
     except discord.errors.Forbidden:
-        logging.warning(f"No access to channel #{channel.name}. Skipping.")
+        logging.warning(f"No access to channel #{channel.name}.")
     except Exception as e:
         logging.error(f"Error fetching messages from #{channel.name}: {e}")
 
@@ -167,29 +160,23 @@ async def run_bot_logic(
     server_name: str = None,
     channel_ids: list = None,
 ) -> None:
-    # Select guild by name if provided
     if server_name:
         guild = discord.utils.get(client.guilds, name=server_name)
-        if guild is None:
-            logging.error(f"Server '{server_name}' not found! Available servers:")
-            for g in client.guilds:
-                logging.error(f"  - {g.name}")
-            # Fallback to first guild
-            guild = client.guilds[0]
-            logging.warning(f"Using first available server: {guild.name}")
-        else:
-            logging.info(f"✅ Found server: {guild.name}")
     else:
-        guild = client.guilds[0]
-        logging.info(f"Using first available server: {guild.name}")
-    start_chunk = datetime.now()
-    await guild.chunk(cache=True)
-    end_chunk = datetime.now()
-    logging.info(
-        f"Fetched data for {len(guild.members)} members in {(end_chunk - start_chunk).total_seconds():.2f} seconds."
-    )
+        guild = discord.utils.get(client.guilds, name="Virgule du 4'")
 
-    server_data = {"roles": {}, "channels": {}, "authors": {}}
+    if guild is None:
+        logging.error(f"Server '{server_name}' not found. Available servers:")
+        for g in client.guilds:
+            logging.error(f"- {g.name}")
+        await client.close()
+        return
+    
+    logging.info(f"Connected to server {guild.name}")
+    await guild.chunk(cache=True)
+    logging.info(f"Fetched data for {len(guild.members)} members.")
+
+    server_data = {"roles": {}, "channels": {}, "members": {}}
 
     for role in guild.roles:
         if role.name != "@everyone":
@@ -204,11 +191,9 @@ async def run_bot_logic(
     for member in guild.members:
         if member.bot:
             continue
-
         member_id_str = str(member.id)
         author_name = ID_NAME_MAP.get(member_id_str, member.name)
-
-        server_data["authors"][member_id_str] = {
+        server_data["members"][member_id_str] = {
             "name": author_name,
             "original_name": member.name,
             "roles": [r.id for r in member.roles if r.name != "@everyone"],
@@ -216,13 +201,15 @@ async def run_bot_logic(
                 str(member.color) if str(member.color) != "#000000" else "#99aab5"
             ),
         }
+        server_data["members"] = dict(
+            sorted(server_data["members"].items(), key=lambda item: item[1]["original_name"].lower())
+        )
 
     os.makedirs(data_dir, exist_ok=True)
     server_data_path = os.path.join(data_dir, server_data_file)
-
     try:
         with open(server_data_path, "w", encoding="utf-8") as f:
-            json.dump(server_data, f, ensure_ascii=False, indent=4)
+            json.dump(server_data, f, ensure_ascii=False, indent=2)
     except IOError as e:
         logging.error(f"Error writing server data file: {e}")
 
@@ -233,10 +220,10 @@ async def run_bot_logic(
             cache_df = pd.read_parquet(cache_path)
             cache_df["created_at"] = pd.to_datetime(cache_df["created_at"])
         except Exception as e:
-            logging.error(f"Error loading cache: {e}. Fetching all messages.")
+            logging.error(f"Error loading cache: {e}.")
             cache_df = None
     else:
-        logging.info("No cache file found. Fetching all messages.")
+        logging.info("No cache file found.")
 
     text_channels = [
         c
@@ -244,26 +231,20 @@ async def run_bot_logic(
         if c.permissions_for(guild.me).read_message_history
     ]
 
-    # Filter by channel IDs if provided
     if channel_ids:
         text_channels = [c for c in text_channels if c.id in channel_ids]
-        logging.info(f"Filtered to {len(text_channels)} channels based on provided IDs")
+        logging.info(f"Filtered to {len(text_channels)} channels")
 
-    logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
-
-    batch_size = 30
+    logging.info(f"Fetch data from {len(text_channels)} channels")
     all_dfs = []
 
-    for i in range(0, len(text_channels), batch_size):
-        batch = text_channels[i : i + batch_size]
-        tasks = [fetch_channel_messages_as_df(channel, cache_df) for channel in batch]
-        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for result in batch_results:
-            if isinstance(result, pd.DataFrame):
-                all_dfs.append(result)
-            elif isinstance(result, Exception):
-                logging.error(f"Error in batch processing: {result}")
+    for i in range(0, len(text_channels)):
+        tasks = [fetch_channel_messages_as_df(text_channels[i], cache_df)]
+        result = await asyncio.gather(*tasks, return_exceptions=True)
+        if isinstance(result, pd.DataFrame):
+            all_dfs.append(result)
+        elif isinstance(result, Exception):
+            logging.error(f"Error in batch processing: {result}")
     valid_dfs = [df for df in all_dfs if not df.empty]
 
     if not valid_dfs and cache_df is None:
@@ -273,7 +254,7 @@ async def run_bot_logic(
     else:
         new_data_df = pd.concat(valid_dfs, ignore_index=True)
         if cache_df is not None:
-            logging.info(f"Adding {len(new_data_df)} new messages to cache.")
+            logging.info(f"Adding {len(new_data_df)} new messages.")
             final_df = pd.concat(
                 [cache_df, new_data_df], ignore_index=True
             ).drop_duplicates(subset=["message_id"], keep="last")
@@ -294,7 +275,7 @@ async def run_bot_logic(
 
 @client.event
 async def on_ready():
-    logging.info(f"{client.user} connected to Discord! Starting bot logic...")
+    logging.info(f"Bot {client.user} connected")
     client.loop.create_task(
         run_bot_logic(
             client.data_dir,

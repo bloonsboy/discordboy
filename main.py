@@ -34,6 +34,8 @@ def process_and_save_stats(df: pd.DataFrame, filename: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     df_copy = df.copy()
+    excluded_channel_ids = [519208892207595540, 745615034201407610, 443134774291202088]
+    df_copy = df_copy[~df_copy["channel_id"].isin(excluded_channel_ids)]
     df_copy["timestamp"] = pd.to_datetime(df_copy["timestamp"])
     df_copy["year"] = df_copy["timestamp"].dt.year
     yearly_counts = (
@@ -61,7 +63,7 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
 
     df_copy = df.copy()
 
-    author_map = {int(k): v["name"] for k, v in server_data.get("authors", {}).items()}
+    author_map = {int(k): v["name"] for k, v in server_data.get("members", {}).items()}
     channel_map = {
         int(k): v["name"] for k, v in server_data.get("channels", {}).items()
     }

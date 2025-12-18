@@ -90,7 +90,7 @@ def register_callbacks(
 
     mudae_ids_set = set(int(id_str) for id_str in mudae_channel_ids)
 
-    author_map = server_data_map.get("authors", {})
+    author_map = server_data_map.get("members", {})
     role_map = server_data_map.get("roles", {})
 
     user_id_to_name_map = {int(k): v["name"] for k, v in author_map.items()}
