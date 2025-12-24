@@ -137,6 +137,24 @@ async def main():
         default=None,
         help="Comma-separated list of channel IDs to fetch (e.g., --channels 123456789,987654321)",
     )
+    parser.add_argument(
+        "--throttle-every",
+        type=int,
+        default=40,
+        help="Sleep after this many messages per channel",
+    )
+    parser.add_argument(
+        "--throttle-sleep",
+        type=float,
+        default=0.6,
+        help="Seconds to sleep when throttling per channel",
+    )
+    parser.add_argument(
+        "--reaction-batch",
+        type=int,
+        default=10,
+        help="Concurrent reaction fetch batch size",
+    )
     args = parser.parse_args()
 
     if not DISCORD_TOKEN:
@@ -168,6 +186,9 @@ async def main():
         SERVER_DATA_FILENAME,
         server_name,
         channel_ids,
+        args.throttle_every,
+        args.throttle_sleep,
+        args.reaction_batch,
     )
 
     if not dashboard_df.empty:
