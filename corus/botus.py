@@ -7,7 +7,6 @@ from datetime import datetime
 
 import discord
 import pandas as pd
-from tqdm.asyncio import tqdm
 from dataus.constant import DATA_DIR, ID_NAME_MAP, SERVER_DATA_FILENAME
 
 logging.basicConfig(
@@ -36,21 +35,23 @@ async def fetch_channel_messages_as_df(
         if not channel_messages.empty:
             after_date = pd.to_datetime(channel_messages["created_at"].max())
 
-    if after_date is None or await channel.history(limit=1, after=after_date).flatten():
-        logging.info(
-            f"Fetching #{channel.name} (after {after_date or ''})"
-        )
+    logging.info(f"Fetching #{channel.name} {after_date or ''}")
 
     messages_data = []
     messages_with_reactions = []
     message_count = 0
+    messages_bot  = []
+    throttle_every = getattr(client, "throttle_every", 40)
+    throttle_sleep = getattr(client, "throttle_sleep", 0.8)
 
     try:
         chunk_size = 10000
         chunk_start = datetime.now()
-
-        async for message in channel.history(limit=None, after=after_date, oldest_first=True):
+        async for message in channel.history(
+            limit=None, after=after_date, oldest_first=True
+        ):
             if message.author.bot:
+                messages_bot.append(message)
                 continue
 
             messages_data.append(
@@ -84,9 +85,11 @@ async def fetch_channel_messages_as_df(
                     f"  #{channel.name}: {message_count} messages fetched ({rate:.0f} messages/s)"
                 )
                 chunk_start = datetime.now()
-            await asyncio.sleep(0.02)
+            if message_count % throttle_every == 0:
+                await asyncio.sleep(throttle_sleep)
 
         if messages_with_reactions:
+
             async def process_message_reactions(index, message):
                 unique_reactors = set()
                 reactions_summary = []
@@ -122,24 +125,25 @@ async def fetch_channel_messages_as_df(
 
                 return index, json.dumps(reactions_summary), len(unique_reactors)
 
-            reaction_tasks = [
-                process_message_reactions(idx, msg)
-                for idx, msg in messages_with_reactions
-            ]
-            reaction_updates = await asyncio.gather(
-                *reaction_tasks, return_exceptions=True
-            )
-
-            for update in reaction_updates:
-                if isinstance(update, tuple) and len(update) == 3:
-                    idx, reactions_json, total_count = update
-                    messages_data[idx]["reactions"] = reactions_json
-                    messages_data[idx]["total_reaction_count"] = total_count
+            # Limit concurrent reaction fetches to reduce rate limits
+            batch_size = getattr(client, "reaction_batch_size", 10)
+            for i in range(0, len(messages_with_reactions), batch_size):
+                batch = messages_with_reactions[i : i + batch_size]
+                reaction_tasks = [
+                    process_message_reactions(idx, msg) for idx, msg in batch
+                ]
+                reaction_updates = await asyncio.gather(
+                    *reaction_tasks, return_exceptions=True
+                )
+                for update in reaction_updates:
+                    if isinstance(update, tuple) and len(update) == 3:
+                        idx, reactions_json, total_count = update
+                        messages_data[idx]["reactions"] = reactions_json
+                        messages_data[idx]["total_reaction_count"] = total_count
+                await asyncio.sleep(0.3)
 
         if message_count > 0:
-            logging.info(
-                f"#{channel.name} finished. {message_count} new messages."
-            )
+            logging.info(f"#{channel.name} finished. {message_count} new messages. {len(messages_bot)} messages from bots.")
         elif after_date is not None:
             pass
         else:
@@ -171,7 +175,7 @@ async def run_bot_logic(
             logging.error(f"- {g.name}")
         await client.close()
         return
-    
+
     logging.info(f"Connected to server {guild.name}")
     await guild.chunk(cache=True)
     logging.info(f"Fetched data for {len(guild.members)} members.")
@@ -202,7 +206,10 @@ async def run_bot_logic(
             ),
         }
         server_data["members"] = dict(
-            sorted(server_data["members"].items(), key=lambda item: item[1]["original_name"].lower())
+            sorted(
+                server_data["members"].items(),
+                key=lambda item: item[1]["original_name"].lower(),
+            )
         )
 
     os.makedirs(data_dir, exist_ok=True)
@@ -240,11 +247,13 @@ async def run_bot_logic(
 
     for i in range(0, len(text_channels)):
         tasks = [fetch_channel_messages_as_df(text_channels[i], cache_df)]
-        result = await asyncio.gather(*tasks, return_exceptions=True)
-        if isinstance(result, pd.DataFrame):
-            all_dfs.append(result)
-        elif isinstance(result, Exception):
-            logging.error(f"Error in batch processing: {result}")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, pd.DataFrame):
+                all_dfs.append(result)
+            elif isinstance(result, Exception):
+                logging.error(f"Error in channel fetch: {result}")
+        await asyncio.sleep(0.5)
     valid_dfs = [df for df in all_dfs if not df.empty]
 
     if not valid_dfs and cache_df is None:
@@ -294,6 +303,9 @@ async def run_bot(
     server_data_file: str,
     server_name: str = None,
     channel_ids: list = None,
+    throttle_every: int = 40,
+    throttle_sleep: float = 0.6,
+    reaction_batch_size: int = 10,
 ) -> None:
     global bot_data_future
     bot_data_future = asyncio.Future()
@@ -303,6 +315,9 @@ async def run_bot(
     client.server_data_file = server_data_file
     client.server_name = server_name
     client.channel_ids = channel_ids
+    client.throttle_every = throttle_every
+    client.throttle_sleep = throttle_sleep
+    client.reaction_batch_size = reaction_batch_size
 
     try:
         await client.start(token)
