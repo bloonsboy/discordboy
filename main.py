@@ -143,18 +143,6 @@ async def main():
         default=40,
         help="Sleep after this many messages per channel",
     )
-    parser.add_argument(
-        "--throttle-sleep",
-        type=float,
-        default=0.6,
-        help="Seconds to sleep when throttling per channel",
-    )
-    parser.add_argument(
-        "--reaction-batch",
-        type=int,
-        default=10,
-        help="Concurrent reaction fetch batch size",
-    )
     args = parser.parse_args()
 
     if not DISCORD_TOKEN:
@@ -167,7 +155,6 @@ async def main():
     else:
         logging.info("No server specified. Will use the first available server.")
 
-    # Parse channel IDs if provided
     channel_ids = None
     if args.channels:
         try:
@@ -185,10 +172,7 @@ async def main():
         CACHE_FILENAME,
         SERVER_DATA_FILENAME,
         server_name,
-        channel_ids,
-        args.throttle_every,
-        args.throttle_sleep,
-        args.reaction_batch,
+        channel_ids
     )
 
     if not dashboard_df.empty:

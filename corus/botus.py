@@ -21,9 +21,23 @@ bot_data_future = None
 def get_len_content(content_str: str) -> int:
     if not content_str:
         return 0
-    content_no_custom_emote = re.sub(r"<a?:\w+:\d+>", "E", content_str)
-    content_no_space = content_no_custom_emote.replace(" ", "")
-    return len(content_no_space)
+    s = content_str
+    s = re.sub(r"<a?:\w+:\d+>", "E", s)  # custom emoji
+    s = re.sub(r"<@!?\d+>", "M", s)  # user mentions
+    s = re.sub(r"<@&?\d+>", "M", s)  # role mentions
+    s = re.sub(r"<@#?\d+>", "M", s)  # channel mentions
+    s = re.sub(r"https?://\S+", "U", s)  # links
+    s = re.sub(r"```([\s\S]*?)```", r"\1", s)  # code blocks
+    s = re.sub(r"`([^`]*)`", r"\1", s)  # inline code
+    s = re.sub(r"\|\|([\s\S]*?)\|\|", r"\1", s)  # spoilers
+    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)  # bold
+    s = re.sub(r"\*([^*]+)\*", r"\1", s)  # italic
+    s = re.sub(r"_([^_]+)_", r"\1", s)  # italic
+    s = re.sub(r"__([^_]+)__", r"\1", s)  # underline
+    s = re.sub(r"~~([^~]+)~~", r"\1", s)  # strikethrough
+    s = re.sub(r"(?m)^>\s?", "", s)  # blockquotes
+    s = s.replace(" ", "")  # remove spaces
+    return len(s)
 
 
 async def fetch_channel_messages_as_df(
@@ -38,20 +52,28 @@ async def fetch_channel_messages_as_df(
     logging.info(f"Fetching #{channel.name} {after_date or ''}")
 
     messages_data = []
-    messages_with_reactions = []
     message_count = 0
-    messages_bot  = []
-    throttle_every = getattr(client, "throttle_every", 40)
-    throttle_sleep = getattr(client, "throttle_sleep", 0.8)
+    messages_bot = 0
 
     try:
         chunk_size = 10000
         chunk_start = datetime.now()
-        async for message in channel.history(
-            limit=None, after=after_date, oldest_first=True
-        ):
+        history_iter = channel.history(limit=None, after=after_date, oldest_first=True)
+        while True:
+            try:
+                message = await history_iter.__anext__()
+            except StopAsyncIteration:
+                break
+            except discord.errors.HTTPException as e:
+                if getattr(e, "status", None) in (429, 502, 503, 504):
+                    await asyncio.sleep(1.0)
+                    continue
+                logging.error(
+                    f"HTTP error while fetching history for #{channel.name}: {e}"
+                )
+                break
             if message.author.bot:
-                messages_bot.append(message)
+                messages_bot += 1
                 continue
 
             messages_data.append(
@@ -67,15 +89,16 @@ async def fetch_channel_messages_as_df(
                     "embeds": len(message.embeds),
                     "mentions": [m.id for m in message.mentions],
                     "mentioned_role_ids": [r.id for r in message.role_mentions],
-                    "reactions": "[]",
-                    "total_reaction_count": 0,
+                    "top_reaction_emoji": (
+                        str(message.reactions[0].emoji) if message.reactions else None
+                    ),
+                    "top_reaction_count": (
+                        int(message.reactions[0].count) if message.reactions else 0
+                    ),
                     "pinned": message.pinned,
                     "jump_url": message.jump_url,
                 }
             )
-
-            if message.reactions:
-                messages_with_reactions.append((message_count, message))
             message_count += 1
 
             if message_count % chunk_size == 0:
@@ -85,65 +108,11 @@ async def fetch_channel_messages_as_df(
                     f"  #{channel.name}: {message_count} messages fetched ({rate:.0f} messages/s)"
                 )
                 chunk_start = datetime.now()
-            if message_count % throttle_every == 0:
-                await asyncio.sleep(throttle_sleep)
-
-        if messages_with_reactions:
-
-            async def process_message_reactions(index, message):
-                unique_reactors = set()
-                reactions_summary = []
-
-                async def fetch_reaction_users(reaction):
-                    try:
-                        users = [
-                            user async for user in reaction.users() if not user.bot
-                        ]
-                        return {
-                            "emoji": str(reaction.emoji),
-                            "count": len(users),
-                            "user_ids": [u.id for u in users],
-                        }
-                    except Exception:
-                        return {
-                            "emoji": str(reaction.emoji),
-                            "count": reaction.count,
-                            "user_ids": [],
-                        }
-
-                reaction_results = await asyncio.gather(
-                    *[fetch_reaction_users(r) for r in message.reactions],
-                    return_exceptions=True,
-                )
-
-                for result in reaction_results:
-                    if isinstance(result, dict):
-                        reactions_summary.append(
-                            {"emoji": result["emoji"], "count": result["count"]}
-                        )
-                        unique_reactors.update(result["user_ids"])
-
-                return index, json.dumps(reactions_summary), len(unique_reactors)
-
-            # Limit concurrent reaction fetches to reduce rate limits
-            batch_size = getattr(client, "reaction_batch_size", 10)
-            for i in range(0, len(messages_with_reactions), batch_size):
-                batch = messages_with_reactions[i : i + batch_size]
-                reaction_tasks = [
-                    process_message_reactions(idx, msg) for idx, msg in batch
-                ]
-                reaction_updates = await asyncio.gather(
-                    *reaction_tasks, return_exceptions=True
-                )
-                for update in reaction_updates:
-                    if isinstance(update, tuple) and len(update) == 3:
-                        idx, reactions_json, total_count = update
-                        messages_data[idx]["reactions"] = reactions_json
-                        messages_data[idx]["total_reaction_count"] = total_count
-                await asyncio.sleep(0.3)
 
         if message_count > 0:
-            logging.info(f"#{channel.name} finished. {message_count} new messages. {len(messages_bot)} messages from bots.")
+            logging.info(
+                f"#{channel.name} finished. {message_count} new messages. {messages_bot} messages from bots."
+            )
         elif after_date is not None:
             pass
         else:
@@ -303,8 +272,6 @@ async def run_bot(
     server_data_file: str,
     server_name: str = None,
     channel_ids: list = None,
-    throttle_every: int = 40,
-    throttle_sleep: float = 0.6,
     reaction_batch_size: int = 10,
 ) -> None:
     global bot_data_future
@@ -315,8 +282,6 @@ async def run_bot(
     client.server_data_file = server_data_file
     client.server_name = server_name
     client.channel_ids = channel_ids
-    client.throttle_every = throttle_every
-    client.throttle_sleep = throttle_sleep
     client.reaction_batch_size = reaction_batch_size
 
     try:
