@@ -17,107 +17,84 @@ def create_layout(df: pd.DataFrame) -> html.Div:
 
     sidebar = html.Div(
         [
-            html.H2("Filters", className="display-6"),
-            html.Hr(),
-            dbc.Row(
+            html.Div(
                 [
-                    dbc.Col(
+                    html.H2(
+                        [html.I(className="fas fa-filter me-2"), "Filters"],
+                        className="display-6 mb-0",
+                    ),
+                    html.P(
+                        "Customize your analysis", className="text-muted small mb-3"
+                    ),
+                ],
+            ),
+            html.Hr(),
+            dbc.Accordion(
+                [
+                    dbc.AccordionItem(
                         [
-                            html.Label("Top Users", className="form-label fw-bold"),
+                            html.Label("Top Users", className="form-label"),
                             dcc.Dropdown(
                                 id="top-n-dropdown",
                                 options=[
-                                    {"label": "Top 5", "value": 5},
-                                    {"label": "Top 10", "value": 10},
-                                    {"label": "Top 20", "value": 20},
-                                    {"label": "Top 50", "value": 50},
-                                    {"label": "Top 100", "value": 100},
-                                    {"label": "Custom", "value": "custom"},
+                                    {"label": "🏆 Top 5", "value": 5},
+                                    {"label": "🏆 Top 10", "value": 10},
+                                    {"label": "🏆 Top 20", "value": 20},
+                                    {"label": "🏆 Top 50", "value": 50},
+                                    {"label": "🏆 Top 100", "value": 100},
                                 ],
-                                value=5,
+                                value=10,
                                 clearable=False,
                             ),
-                        ],
-                        width=12,
-                    ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.Label("Users", className="form-label fw-bold"),
+                            html.Div(className="mb-3"),
+                            html.Label(
+                                "Select Specific Users", className="form-label mt-3"
+                            ),
                             dcc.Dropdown(
                                 id="user-dropdown",
                                 multi=True,
-                                placeholder="Select users...",
+                                placeholder="🔍 Search users...",
                             ),
-                        ],
-                        width=12,
-                    ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.Label(
-                                "Highlight User", className="form-label fw-bold"
-                            ),
+                            html.Div(className="mb-3"),
+                            html.Label("Highlight User", className="form-label mt-3"),
                             dcc.Dropdown(
                                 id="highlight-user-dropdown",
                                 multi=False,
-                                placeholder="Select a user to highlight...",
+                                placeholder="✨ Highlight a user...",
                             ),
                         ],
-                        width=12,
+                        title="👥 Users Selection",
+                        item_id="users",
                     ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
+                    dbc.AccordionItem(
                         [
-                            html.Label("Time Period", className="form-label fw-bold"),
+                            html.Label("Time Period", className="form-label"),
                             dcc.Dropdown(
                                 id="date-range-dropdown",
                                 options=[
-                                    {"label": "Custom", "value": "custom"},
+                                    {"label": "📅 Custom", "value": "custom"},
                                     {
-                                        "label": "Current Year",
+                                        "label": "📆 Current Year",
                                         "value": "current_year",
                                     },
+                                    {"label": "📊 Last 365 Days", "value": "last_365"},
                                     {
-                                        "label": "Last 365 Days",
-                                        "value": "last_365",
-                                    },
-                                    {
-                                        "label": "Last 6 Months",
+                                        "label": "📊 Last 6 Months",
                                         "value": "last_6_months",
                                     },
                                     {
-                                        "label": "Last 3 Months",
+                                        "label": "📊 Last 3 Months",
                                         "value": "last_3_months",
                                     },
-                                    {"label": "All-time", "value": "all-time"},
+                                    {"label": "♾️ All-time", "value": "all-time"},
                                 ],
-                                value="last_365",
+                                value="all-time",
                                 clearable=False,
                             ),
-                        ],
-                        width=12,
-                    ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.Label("Date Range", className="form-label fw-bold"),
+                            html.Div(className="mb-3"),
+                            html.Label(
+                                "Custom Date Range", className="form-label mt-3"
+                            ),
                             dcc.DatePickerRange(
                                 id="date-picker-range",
                                 min_date_allowed=min_date,
@@ -131,83 +108,55 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                             ),
                             html.Div(
                                 id="date-range-display",
-                                className="text-muted small mt-1",
+                                className="text-muted small mt-2",
                             ),
                         ],
-                        width=12,
+                        title="📅 Time Period",
+                        item_id="time",
                     ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
+                    dbc.AccordionItem(
                         [
-                            html.Label(
-                                "Analysis Metric", className="form-label fw-bold"
-                            ),
+                            html.Label("Analysis Metric", className="form-label"),
                             dbc.RadioItems(
                                 id="metric-selector",
                                 options=[
-                                    {"label": "Message Count", "value": "messages"},
+                                    {"label": "💬 Message Count", "value": "messages"},
                                     {
-                                        "label": "Character Count",
+                                        "label": "📝 Character Count",
                                         "value": "characters",
                                     },
                                 ],
                                 value="messages",
-                                inline=True,
-                                labelClassName="me-3",
-                                inputClassName="me-1",
+                                className="mb-3",
                             ),
-                        ],
-                        width=12,
-                    ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.Label(
-                                "Special Filter (Role)", className="form-label fw-bold"
-                            ),
+                            html.Label("Role Filter", className="form-label mt-3"),
                             dbc.RadioItems(
                                 id="virgule-filter",
                                 options=[
-                                    {"label": "Everyone", "value": "everyone"},
-                                    {"label": "Virgule Only", "value": "virgule_only"},
-                                    {"label": "No Virgule", "value": "no_virgule"},
+                                    {"label": "👥 Everyone", "value": "everyone"},
+                                    {
+                                        "label": "⭐ Virgule Only",
+                                        "value": "virgule_only",
+                                    },
+                                    {"label": "🚫 No Virgule", "value": "no_virgule"},
                                 ],
                                 value="everyone",
-                                inline=True,
-                                labelClassName="me-3",
-                                inputClassName="me-1",
+                                className="mb-3",
                             ),
-                        ],
-                        width=12,
-                    ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.Label(
-                                "Channel Filter", className="form-label fw-bold"
-                            ),
+                            html.Label("Channel Options", className="form-label mt-3"),
                             dbc.Switch(
                                 id="mudae-filter-switch",
-                                label="Include Mudae Channels",
+                                label="🎮 Include Mudae Channels",
                                 value=False,
                             ),
                         ],
-                        width=12,
+                        title="⚙️ Options & Filters",
+                        item_id="options",
                     ),
                 ],
-                className="mb-3",
+                start_collapsed=False,
+                always_open=True,
+                flush=True,
             ),
         ],
         id="filter-sidebar",

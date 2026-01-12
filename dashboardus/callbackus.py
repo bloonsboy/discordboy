@@ -10,6 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import html
 from dash.dependencies import Input, Output, State
+
 from dataus.constant import EXCLUDED_CHANNEL_IDS
 
 SIDEBAR_STYLE = {
@@ -485,7 +486,12 @@ def register_callbacks(
             metric_selected,
         )
         fig_mentioned = create_most_mentioned_graph(
-            dff, color_map, user_id_to_name_map, role_names_map
+            dff,
+            color_map,
+            user_id_to_name_map,
+            role_names_map,
+            name_to_user_id_map,
+            user_id_to_color_map,
         )
         top_reactions_component = create_top_reactions_list(
             dff, user_id_to_color_map, current_member_ids_int
@@ -1125,6 +1131,8 @@ def register_callbacks(
         color_map: dict,
         user_id_to_name_map: dict,
         role_names_map: dict,
+        name_to_user_id_map: dict,
+        user_id_to_color_map: dict,
     ) -> go.Figure:
         if dff.empty:
             return go.Figure(
@@ -1197,10 +1205,17 @@ def register_callbacks(
             return go.Figure(
                 layout={
                     "template": "plotly_white",
+                    "xaxis": {"visible": False},
+                    "yaxis": {"visible": False},
                     "annotations": [
                         {
                             "text": "No mentions for known users/roles",
                             "showarrow": False,
+                            "xref": "paper",
+                            "yref": "paper",
+                            "x": 0.5,
+                            "y": 0.5,
+                            "font": {"size": 16},
                         }
                     ],
                 }
@@ -1306,7 +1321,21 @@ def register_callbacks(
                             ],
                         ),
                         html.Span(
-                            f"{int(row['total_reaction_count'])} reactions",
+                            [
+                                # Only show unicode emojis, not custom Discord emojis
+                                html.Span(
+                                    (
+                                        row.get("top_reaction_emoji", "")
+                                        if row.get("top_reaction_emoji", "")
+                                        and ":"
+                                        not in str(row.get("top_reaction_emoji", ""))
+                                        else ""
+                                    ),
+                                    className="me-2",
+                                    style={"fontSize": "1.2em"},
+                                ),
+                                f"{int(row['total_reaction_count'])} reactions",
+                            ],
                             className="badge bg-primary rounded-pill fs-6",
                         ),
                     ],

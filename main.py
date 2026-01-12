@@ -5,6 +5,8 @@ import logging
 import os
 
 import pandas as pd
+from dotenv import load_dotenv
+
 from corus.botus import run_bot
 from dashboardus.appus import create_app
 from dataus.constant import (
@@ -17,7 +19,6 @@ from dataus.constant import (
     SMURF_IDS,
     STATS_FILENAME,
 )
-from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -84,6 +85,10 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
         active_user_count = len(active_users)
     else:
         active_user_count = len(df_copy["author_name"].unique())
+
+    # Rename top_reaction_count to total_reaction_count for compatibility
+    if "top_reaction_count" in df_copy.columns:
+        df_copy["total_reaction_count"] = df_copy["top_reaction_count"]
 
     for col in [
         "len_content",
@@ -172,7 +177,7 @@ async def main():
         CACHE_FILENAME,
         SERVER_DATA_FILENAME,
         server_name,
-        channel_ids
+        channel_ids,
     )
 
     if not dashboard_df.empty:
