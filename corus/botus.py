@@ -7,6 +7,7 @@ from datetime import datetime
 
 import discord
 import pandas as pd
+
 from dataus.constant import DATA_DIR, ID_NAME_MAP, SERVER_DATA_FILENAME
 
 logging.basicConfig(
@@ -49,31 +50,20 @@ async def fetch_channel_messages_as_df(
         if not channel_messages.empty:
             after_date = pd.to_datetime(channel_messages["created_at"].max())
 
-    logging.info(f"Fetching #{channel.name} {after_date or ''}")
+    after_str = (
+        f"after {after_date.strftime('%Y-%m-%d')}" if after_date else "from beginning"
+    )
+    logging.info(f"[START] Fetching #{channel.name} ({after_str})")
 
     messages_data = []
-    message_count = 0
-    messages_bot = 0
+    start_time = datetime.now()
 
     try:
-        chunk_size = 10000
-        chunk_start = datetime.now()
-        history_iter = channel.history(limit=None, after=after_date, oldest_first=True)
-        while True:
-            try:
-                message = await history_iter.__anext__()
-            except StopAsyncIteration:
-                break
-            except discord.errors.HTTPException as e:
-                if getattr(e, "status", None) in (429, 502, 503, 504):
-                    await asyncio.sleep(1.0)
-                    continue
-                logging.error(
-                    f"HTTP error while fetching history for #{channel.name}: {e}"
-                )
-                break
+        # Fetch main channel messages
+        async for message in channel.history(
+            limit=None, after=after_date, oldest_first=True
+        ):
             if message.author.bot:
-                messages_bot += 1
                 continue
 
             messages_data.append(
@@ -99,29 +89,97 @@ async def fetch_channel_messages_as_df(
                     "jump_url": message.jump_url,
                 }
             )
-            message_count += 1
 
-            if message_count % chunk_size == 0:
-                chunk_time = (datetime.now() - chunk_start).total_seconds()
-                rate = chunk_size / chunk_time if chunk_time > 0 else 0
-                logging.info(
-                    f"  #{channel.name}: {message_count} messages fetched ({rate:.0f} messages/s)"
-                )
-                chunk_start = datetime.now()
+        main_msg_count = len(messages_data)
 
-        if message_count > 0:
-            logging.info(
-                f"#{channel.name} finished. {message_count} new messages. {messages_bot} messages from bots."
-            )
-        elif after_date is not None:
-            pass
-        else:
-            logging.info(f"Fetching #{channel.name} finished. 0 messages found.")
+        # Fetch messages from threads (active + archived)
+        threads_fetched = 0
+        try:
+            # Active threads
+            for thread in channel.threads:
+                threads_fetched += 1
+                async for message in thread.history(
+                    limit=None, after=after_date, oldest_first=True
+                ):
+                    if message.author.bot:
+                        continue
+                    messages_data.append(
+                        {
+                            "message_id": message.id,
+                            "author_id": message.author.id,
+                            "channel_id": thread.id,
+                            "content": message.content,
+                            "len_content": get_len_content(message.content),
+                            "created_at": message.created_at,
+                            "edited_at": message.edited_at,
+                            "attachments": len(message.attachments),
+                            "embeds": len(message.embeds),
+                            "mentions": [m.id for m in message.mentions],
+                            "mentioned_role_ids": [r.id for r in message.role_mentions],
+                            "top_reaction_emoji": (
+                                str(message.reactions[0].emoji)
+                                if message.reactions
+                                else None
+                            ),
+                            "top_reaction_count": (
+                                int(message.reactions[0].count)
+                                if message.reactions
+                                else 0
+                            ),
+                            "pinned": message.pinned,
+                            "jump_url": message.jump_url,
+                        }
+                    )
+
+            # Archived threads
+            async for thread in channel.archived_threads(limit=None):
+                threads_fetched += 1
+                async for message in thread.history(
+                    limit=None, after=after_date, oldest_first=True
+                ):
+                    if message.author.bot:
+                        continue
+                    messages_data.append(
+                        {
+                            "message_id": message.id,
+                            "author_id": message.author.id,
+                            "channel_id": thread.id,
+                            "content": message.content,
+                            "len_content": get_len_content(message.content),
+                            "created_at": message.created_at,
+                            "edited_at": message.edited_at,
+                            "attachments": len(message.attachments),
+                            "embeds": len(message.embeds),
+                            "mentions": [m.id for m in message.mentions],
+                            "mentioned_role_ids": [r.id for r in message.role_mentions],
+                            "top_reaction_emoji": (
+                                str(message.reactions[0].emoji)
+                                if message.reactions
+                                else None
+                            ),
+                            "top_reaction_count": (
+                                int(message.reactions[0].count)
+                                if message.reactions
+                                else 0
+                            ),
+                            "pinned": message.pinned,
+                            "jump_url": message.jump_url,
+                        }
+                    )
+        except Exception as e:
+            logging.warning(f"Error fetching threads for #{channel.name}: {e}")
+
+        thread_msg_count = len(messages_data) - main_msg_count
+        elapsed = (datetime.now() - start_time).total_seconds()
+        rate = len(messages_data) / elapsed if elapsed > 0 else 0
+        logging.info(
+            f"[END] #{channel.name}: {len(messages_data)} msgs ({main_msg_count} main + {thread_msg_count} threads from {threads_fetched} threads) in {elapsed:.1f}s ({rate:.0f} msg/s)"
+        )
 
     except discord.errors.Forbidden:
         logging.warning(f"No access to channel #{channel.name}.")
     except Exception as e:
-        logging.error(f"Error fetching messages from #{channel.name}: {e}")
+        logging.exception(f"Error fetching #{channel.name}")
 
     return pd.DataFrame(messages_data)
 
@@ -211,18 +269,19 @@ async def run_bot_logic(
         text_channels = [c for c in text_channels if c.id in channel_ids]
         logging.info(f"Filtered to {len(text_channels)} channels")
 
-    logging.info(f"Fetch data from {len(text_channels)} channels")
+    logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
     all_dfs = []
 
-    for i in range(0, len(text_channels)):
-        tasks = [fetch_channel_messages_as_df(text_channels[i], cache_df)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for result in results:
-            if isinstance(result, pd.DataFrame):
-                all_dfs.append(result)
-            elif isinstance(result, Exception):
-                logging.error(f"Error in channel fetch: {result}")
-        await asyncio.sleep(0.5)
+    # Fetch channels sequentially - discord.py handles rate limits automatically
+    for i, channel in enumerate(text_channels, 1):
+        logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
+        try:
+            df = await fetch_channel_messages_as_df(channel, cache_df)
+            if not df.empty:
+                all_dfs.append(df)
+        except Exception as e:
+            logging.exception(f"Error fetching #{channel.name}")
+
     valid_dfs = [df for df in all_dfs if not df.empty]
 
     if not valid_dfs and cache_df is None:
