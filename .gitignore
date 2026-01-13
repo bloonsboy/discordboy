@@ -16,10 +16,10 @@ discvenv/
 discordboy.egg-info/
 
 # Data files
-.parquet
-.csv
-.json
-.db
+*.parquet
+*.csv
+*.json
+*.db
 
 # Test files
 playground.ipynb
