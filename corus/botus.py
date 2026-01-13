@@ -13,6 +13,9 @@ from dataus.constant import DATA_DIR, ID_NAME_MAP, SERVER_DATA_FILENAME
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logging.getLogger('discord.http').setLevel(logging.ERROR)
+logging.getLogger('discord.client').setLevel(logging.ERROR)
+logging.getLogger('discord.gateway').setLevel(logging.ERROR)
 
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
@@ -57,6 +60,7 @@ async def fetch_channel_messages_as_df(
 
     messages_data = []
     start_time = datetime.now()
+    progress_counter = 0
 
     try:
         async for message in channel.history(
@@ -89,6 +93,10 @@ async def fetch_channel_messages_as_df(
                     "jump_url": message.jump_url,
                 }
             )
+            
+            progress_counter += 1
+            if progress_counter % 10000 == 0:
+                logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name}...")
 
         main_msg_count = len(messages_data)
 
@@ -101,6 +109,11 @@ async def fetch_channel_messages_as_df(
                 ):
                     if message.author.bot:
                         continue
+                    
+                    progress_counter += 1
+                    if progress_counter % 10000 == 0:
+                        logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name} (threads)...")
+                    
                     messages_data.append(
                         {
                             "message_id": message.id,
@@ -136,6 +149,11 @@ async def fetch_channel_messages_as_df(
                 ):
                     if message.author.bot:
                         continue
+                    
+                    progress_counter += 1
+                    if progress_counter % 10000 == 0:
+                        logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name} (archived threads)...")
+                    
                     messages_data.append(
                         {
                             "message_id": message.id,
