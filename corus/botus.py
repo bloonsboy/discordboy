@@ -130,7 +130,6 @@ async def fetch_channel_messages_as_df(
                         }
                     )
 
-            # Archived threads
             async for thread in channel.archived_threads(limit=None):
                 async for message in thread.history(
                     limit=None, after=after_date, oldest_first=True
@@ -270,7 +269,6 @@ async def run_bot_logic(
 
     logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
     
-    # Initialize cache_df as empty DataFrame if None
     if cache_df is None:
         cache_df = pd.DataFrame()
 
@@ -278,7 +276,6 @@ async def run_bot_logic(
         try:
             df = await fetch_channel_messages_as_df(channel, cache_df)
             if not df.empty:
-                # Add new messages to cache
                 if cache_df.empty:
                     logging.info(f"Added {len(df)} messages from #{channel.name}")
                 else:
@@ -289,7 +286,6 @@ async def run_bot_logic(
                     new_count = len(cache_df) - initial_count
                     logging.info(f"Added {new_count} new messages from #{channel.name}")
                 
-                # Save to parquet after each channel
                 try:
                     cache_df.to_parquet(cache_path, index=False)
                 except Exception as e:

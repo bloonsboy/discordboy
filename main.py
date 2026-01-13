@@ -96,7 +96,7 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     else:
         active_user_count = len(df_copy["author_name"].unique())
 
-    # Rename top_reaction_count to total_reaction_count for compatibility
+    if "top_reaction_count" in df_copy.columns:
         df_copy["total_reaction_count"] = df_copy["top_reaction_count"]
 
     for col in [

@@ -1265,7 +1265,6 @@ def register_callbacks(
                 className="text-center text-muted p-4",
             )
 
-        # Sort by total_reaction_count (now represents unique users who reacted)
         top_reacted = dff.sort_values(by="total_reaction_count", ascending=False).head(
             10
         )
@@ -1322,7 +1321,6 @@ def register_callbacks(
                         ),
                         html.Span(
                             [
-                                # Only show unicode emojis, not custom Discord emojis
                                 html.Span(
                                     (
                                         row.get("top_reaction_emoji", "")
