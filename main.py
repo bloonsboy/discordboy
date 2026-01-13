@@ -104,8 +104,20 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
         if col in df_copy.columns:
             # Handle both string JSON, numpy arrays, and lists
             def parse_list_col(x):
-                if pd.isna(x) or x is None:
+                # Handle None first
+                if x is None:
                     return []
+                # Handle numpy arrays and pandas scalars
+                try:
+                    if hasattr(x, 'size') and x.size == 0:
+                        return []
+                    # Check for pandas NA/None values more carefully
+                    if pd.isna(x).any() if hasattr(pd.isna(x), 'any') else pd.isna(x):
+                        return []
+                except (ValueError, TypeError):
+                    # If pd.isna fails, continue to other checks
+                    pass
+                
                 if isinstance(x, str):
                     try:
                         return json.loads(x)
