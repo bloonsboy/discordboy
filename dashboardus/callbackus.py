@@ -50,10 +50,14 @@ def create_table_from_figure(fig: go.Figure) -> html.Div:
     )
 
 
-def render_view(content, view_toggle: str, is_figure: bool = True):
-    if view_toggle == "table" and is_figure:
+def render_view(content, view_slider: int, is_figure: bool = True):
+    """
+    Render content as graph or table based on slider value.
+    view_slider: 0 = Graph, 1 = Table
+    """
+    if view_slider == 1 and is_figure:
         return create_table_from_figure(content)
-    elif view_toggle == "graph" and is_figure:
+    elif view_slider == 0 and is_figure:
         return dcc.Graph(figure=content, style={"height": "600px"})
     else:
         return content
@@ -96,6 +100,33 @@ HEADER_STYLE_FULL = {
     "marginLeft": "0rem",
     "transition": "all 0.3s",
 }
+
+
+def resolve_mentions(text: str, user_id_to_name_map: dict, role_map: dict) -> str:
+    """
+    Convert Discord mentions (<@USER_ID> and <@&ROLE_ID>) to readable names.
+    """
+    import re
+    
+    # Replace user mentions <@USER_ID>
+    def replace_user_mention(match):
+        user_id = int(match.group(1))
+        user_name = user_id_to_name_map.get(user_id, f"Unknown User ({user_id})")
+        return f"@{user_name}"
+    
+    # Replace role mentions <@&ROLE_ID>
+    def replace_role_mention(match):
+        role_id = match.group(1)
+        role_name = role_map.get(role_id, {}).get("name", f"Unknown Role ({role_id})")
+        return f"@{role_name}"
+    
+    # Apply user mention replacement
+    text = re.sub(r'<@!?(\d+)>', replace_user_mention, text)
+    
+    # Apply role mention replacement
+    text = re.sub(r'<@&(\d+)>', replace_role_mention, text)
+    
+    return text
 
 
 def register_callbacks(
@@ -219,6 +250,20 @@ def register_callbacks(
         )
 
     @app.callback(
+        Output("metric-store", "data"),
+        Input("metric-dropdown", "value"),
+    )
+    def update_metric(metric: str) -> str:
+        return metric
+
+    @app.callback(
+        Output("aggregation-store", "data"),
+        Input("aggregation-dropdown", "value"),
+    )
+    def update_aggregation(aggregation: str) -> str:
+        return aggregation
+
+    @app.callback(
         Output("evolution-container", "children"),
         Output("user-dropdown", "options"),
         Output("user-dropdown", "value"),
@@ -233,26 +278,25 @@ def register_callbacks(
         Output("distribution-container", "children"),
         Output("monthly-leaderboard-msg", "children"),
         Output("daily-leaderboard-msg-container", "children"),
-        Output("monthly-leaderboard-char", "children"),
-        Output("daily-leaderboard-char-container", "children"),
         Output("mentioned-users-container", "children"),
         Output("top-reacted-messages", "children"),
         Input("user-dropdown", "value"),
         Input("date-picker-range", "start_date"),
         Input("date-picker-range", "end_date"),
         Input("top-n-dropdown", "value"),
-        Input("metric-selector", "value"),
-        Input("evolution-graph-selector", "value"),
+        Input("metric-store", "data"),
+        Input("aggregation-store", "data"),
         Input("highlight-user-dropdown", "value"),
         Input("date-range-dropdown", "value"),
         Input("virgule-filter", "value"),
         Input("distribution-time-unit", "value"),
-        Input("daily-leaderboard-toggle", "value"),
         Input("mudae-filter-switch", "value"),
-        Input("evolution-view-toggle", "value"),
-        Input("distribution-view-toggle", "value"),
-        Input("median-length-view-toggle", "value"),
-        Input("mentioned-users-view-toggle", "value"),
+        Input("evolution-view-slider", "value"),
+        Input("distribution-view-slider", "value"),
+        Input("median-length-view-slider", "value"),
+        Input("mentioned-users-view-slider", "value"),
+        Input("length-aggregation-dropdown", "value"),
+        Input("length-chart-type-dropdown", "value"),
         State("date-picker-range", "min_date_allowed"),
         State("date-picker-range", "max_date_allowed"),
     )
@@ -262,17 +306,18 @@ def register_callbacks(
         end_date: str,
         top_n: int,
         metric_selected: str,
-        evolution_view: str,
+        aggregation_type: str,
         highlighted_user_name: str,
         date_range_period: str,
         virgule_filter: str,
         dist_time_unit: str,
-        daily_toggle: bool,
         mudae_switch_value: bool,
-        evolution_view_toggle: str,
-        distribution_view_toggle: str,
-        median_length_view_toggle: str,
-        mentioned_users_view_toggle: str,
+        evolution_view_slider: int,
+        distribution_view_slider: int,
+        median_length_view_slider: int,
+        mentioned_users_view_slider: int,
+        length_aggregation: str,
+        length_chart_type: str,
         min_date_allowed: str,
         max_date_allowed: str,
     ) -> tuple:
@@ -358,16 +403,15 @@ def register_callbacks(
         ].copy()
 
         if not dff.empty:
-            dff["month_year"] = (
-                dff["timestamp"]
-                .dt.tz_convert("Europe/Paris")
-                .dt.to_period("M")
-                .astype(str)
-            )
-            dff["hour_of_day"] = dff["timestamp"].dt.tz_convert("Europe/Paris").dt.hour
-            dff["weekday"] = dff["timestamp"].dt.day_name()
-            dff["month_name"] = dff["timestamp"].dt.month_name()
-            dff["year"] = dff["timestamp"].dt.year
+            # Convert to Europe/Paris timezone for all temporal columns
+            paris_timestamp = dff["timestamp"].dt.tz_convert("Europe/Paris")
+            
+            # Use string format instead of to_period to avoid timezone warning
+            dff["month_year"] = paris_timestamp.dt.strftime("%Y-%m")
+            dff["hour_of_day"] = paris_timestamp.dt.hour
+            dff["weekday"] = paris_timestamp.dt.day_name()
+            dff["month_name"] = paris_timestamp.dt.month_name()
+            dff["year"] = paris_timestamp.dt.year
         else:
             for col in ["month_year", "hour_of_day", "weekday", "month_name", "year"]:
                 dff[col] = pd.NA
@@ -394,7 +438,8 @@ def register_callbacks(
         if triggered_id is None or triggered_id in [
             "top-n-dropdown",
             "date-picker-range",
-            "metric-selector",
+            "metric-store",
+            "aggregation-store",
             "date-range-dropdown",
             "virgule-filter",
             "mudae-filter-switch",
@@ -534,13 +579,11 @@ def register_callbacks(
                 empty_figure,
                 empty_leaderboard,
                 empty_leaderboard,
-                empty_leaderboard,
-                empty_leaderboard,
                 empty_figure,
                 empty_list_component,
             )
 
-        if evolution_view == 0:
+        if aggregation_type == "cumulative":
             fig_evolution = create_cumulative_graph(
                 dff_filtered, color_map, metric_selected, highlighted_user_name
             )
@@ -549,7 +592,7 @@ def register_callbacks(
                 dff_filtered, color_map, metric_selected, highlighted_user_name
             )
 
-        fig_median_length = create_median_length_graph(dff_filtered, dff, color_map)
+        fig_median_length = create_median_length_graph(dff_filtered, dff, color_map, length_aggregation, length_chart_type)
         fig_distribution = create_distribution_graph(
             dff_filtered,
             dff,
@@ -570,23 +613,18 @@ def register_callbacks(
             dff, user_id_to_color_map, current_member_ids_int
         )
 
-        monthly_leaderboard_msg = create_leaderboard(
-            dff, "M", "Months Won", "%B %Y", "messages"
+        # Use metric_selected to determine which leaderboards to show
+        monthly_leaderboard = create_leaderboard(
+            dff, "ME", "Months Won", "%B %Y", metric_selected
         )
-        daily_leaderboard_msg = create_daily_leaderboard(
-            dff, "messages", daily_toggle, start_date_utc, end_date_utc, color_map
-        )
-        monthly_leaderboard_char = create_leaderboard(
-            dff, "M", "Months Won", "%B %Y", "characters"
-        )
-        daily_leaderboard_char = create_daily_leaderboard(
-            dff, "characters", daily_toggle, start_date_utc, end_date_utc, color_map
+        daily_leaderboard = create_daily_leaderboard(
+            dff, metric_selected, start_date_utc, end_date_utc, color_map
         )
 
-        evolution_content = render_view(fig_evolution, evolution_view_toggle, True)
-        distribution_content = render_view(fig_distribution, distribution_view_toggle, True)
-        median_length_content = render_view(fig_median_length, median_length_view_toggle, True)
-        mentioned_users_content = render_view(fig_mentioned, mentioned_users_view_toggle, True)
+        evolution_content = render_view(fig_evolution, evolution_view_slider, True)
+        distribution_content = render_view(fig_distribution, distribution_view_slider, True)
+        median_length_content = render_view(fig_median_length, median_length_view_slider, True)
+        mentioned_users_content = render_view(fig_mentioned, mentioned_users_view_slider, True)
 
         return (
             evolution_content,
@@ -601,10 +639,8 @@ def register_callbacks(
             output_end_date,
             median_length_content,
             distribution_content,
-            monthly_leaderboard_msg,
-            daily_leaderboard_msg,
-            monthly_leaderboard_char,
-            daily_leaderboard_char,
+            monthly_leaderboard,
+            daily_leaderboard,
             mentioned_users_content,
             top_reactions_component,
         )
@@ -810,7 +846,7 @@ def register_callbacks(
         return fig
 
     def create_median_length_graph(
-        dff_filtered: pd.DataFrame, dff: pd.DataFrame, color_map: dict
+        dff_filtered: pd.DataFrame, dff: pd.DataFrame, color_map: dict, aggregation: str = "median", chart_type: str = "bar"
     ) -> go.Figure:
         if dff_filtered.empty:
             return go.Figure(
@@ -822,15 +858,54 @@ def register_callbacks(
                 }
             )
 
-        median_lengths = (
-            dff_filtered.dropna(subset=["len_content"])
-            .groupby("author_name")["len_content"]
-            .median()
-            .sort_values(ascending=True)
-        )
-        server_median = dff.dropna(subset=["len_content"])["len_content"].median()
+        if chart_type == "box":
+            # Box plot showing distribution of message lengths
+            fig = go.Figure()
+            
+            users = dff_filtered["author_name"].unique()
+            for user in users:
+                user_data = dff_filtered[dff_filtered["author_name"] == user]["len_content"].dropna()
+                if not user_data.empty:
+                    fig.add_trace(
+                        go.Box(
+                            y=[user],
+                            x=user_data.values,
+                            orientation="h",
+                            name=user,
+                            marker=dict(color=color_map.get(user, "#6c757d")),
+                            showlegend=False,
+                        )
+                    )
+            
+            fig.update_layout(
+                xaxis_title="Message Length (characters)",
+                yaxis_title="User",
+                template="plotly_white",
+                showlegend=False,
+            )
+            return fig
+        
+        # Bar chart mode
+        if aggregation == "mean":
+            length_values = (
+                dff_filtered.dropna(subset=["len_content"])
+                .groupby("author_name")["len_content"]
+                .mean()
+                .sort_values(ascending=True)
+            )
+            title_text = "Mean Characters per Message"
+            trace_name = "Mean Length"
+        else:
+            length_values = (
+                dff_filtered.dropna(subset=["len_content"])
+                .groupby("author_name")["len_content"]
+                .median()
+                .sort_values(ascending=True)
+            )
+            title_text = "Median Characters per Message"
+            trace_name = "Median Length"
 
-        if median_lengths.empty:
+        if length_values.empty:
             return go.Figure(
                 layout={
                     "template": "plotly_white",
@@ -843,41 +918,21 @@ def register_callbacks(
                 }
             )
 
-        colors = [color_map.get(name, "#6c757d") for name in median_lengths.index]
+        colors = [color_map.get(name, "#6c757d") for name in length_values.index]
 
         fig = go.Figure()
         fig.add_trace(
             go.Bar(
-                y=median_lengths.index,
-                x=median_lengths.values,
+                y=length_values.index,
+                x=length_values.values,
                 orientation="h",
                 marker=dict(color=colors),
-                name="Median Length",
+                name=trace_name,
             )
         )
 
-        if pd.notna(server_median):
-            fig.add_shape(
-                type="line",
-                x0=server_median,
-                x1=server_median,
-                y0=-0.5,
-                y1=len(median_lengths) - 0.5,
-                line=dict(color="red", width=3, dash="dash"),
-                name="Server Median",
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="lines",
-                    line=dict(color="red", width=3, dash="dash"),
-                    name="Server Median",
-                )
-            )
-
         fig.update_layout(
-            xaxis_title="Median Characters per Message",
+            xaxis_title=title_text,
             yaxis_title="User",
             template="plotly_white",
             legend=dict(
@@ -909,7 +964,7 @@ def register_callbacks(
             x_col, x_label = "hour_of_day", "Hour of Day"
             categories = list(range(24))
             dtick = 2
-        elif time_unit == "weekday":
+        elif time_unit == "day":
             x_col, x_label = "weekday", "Day of Week"
             categories = days_order
             dtick = 1
@@ -922,6 +977,8 @@ def register_callbacks(
             categories = sorted(dff[x_col].dropna().unique())
             dtick = 1
 
+        dff_top = dff_top.copy()
+        dff = dff.copy()
         dff_top["x_axis"] = dff_top[x_col]
         dff["x_axis"] = dff[x_col]
 
@@ -999,20 +1056,26 @@ def register_callbacks(
         if dff.empty:
             return html.P("No data.", className="text-center p-3")
 
+        # Convert to Paris timezone before grouping
+        dff_paris = dff.copy()
+        dff_paris["timestamp_paris"] = dff_paris["timestamp"].dt.tz_convert("Europe/Paris")
+
         if metric_selected == "characters":
             resampled = (
-                dff.groupby([dff["timestamp"].dt.to_period(period), "author_name"])[
+                dff_paris.groupby([pd.Grouper(key="timestamp_paris", freq=period), "author_name"])[
                     "len_content"
                 ]
                 .sum()
                 .reset_index(name="value")
             )
+            resampled.rename(columns={"timestamp_paris": "timestamp"}, inplace=True)
         else:
             resampled = (
-                dff.groupby([dff["timestamp"].dt.to_period(period), "author_name"])
+                dff_paris.groupby([pd.Grouper(key="timestamp_paris", freq=period), "author_name"])
                 .size()
                 .reset_index(name="value")
             )
+            resampled.rename(columns={"timestamp_paris": "timestamp"}, inplace=True)
 
         if resampled.empty:
             return html.P("Not enough data.", className="text-center p-3")
@@ -1043,7 +1106,6 @@ def register_callbacks(
     def create_daily_leaderboard(
         dff: pd.DataFrame,
         metric_selected: str,
-        view_mode: str,
         start_date_utc: pd.Timestamp,
         end_date_utc: pd.Timestamp,
         color_map: dict,
@@ -1051,66 +1113,48 @@ def register_callbacks(
         if dff.empty:
             return html.P("No data.", className="text-center p-3")
 
+        # Convert to Paris timezone before grouping by day
+        dff_paris = dff.copy()
+        dff_paris["timestamp_paris"] = dff_paris["timestamp"].dt.tz_convert("Europe/Paris")
+
         if metric_selected == "characters":
             resampled = (
-                dff.groupby([dff["timestamp"].dt.to_period("D"), "author_name"])[
+                dff_paris.groupby([pd.Grouper(key="timestamp_paris", freq="D"), "author_name"])[
                     "len_content"
                 ]
                 .sum()
                 .reset_index(name="value")
             )
+            resampled.rename(columns={"timestamp_paris": "timestamp"}, inplace=True)
         else:
             resampled = (
-                dff.groupby([dff["timestamp"].dt.to_period("D"), "author_name"])
+                dff_paris.groupby([pd.Grouper(key="timestamp_paris", freq="D"), "author_name"])
                 .size()
                 .reset_index(name="value")
             )
+            resampled.rename(columns={"timestamp_paris": "timestamp"}, inplace=True)
 
         if resampled.empty:
             return html.P("Not enough data.", className="text-center p-3")
 
         winners = resampled.loc[resampled.groupby("timestamp")["value"].idxmax()]
 
-        if view_mode == "list":
-            wins_df = (
-                winners.groupby("author_name")["timestamp"].agg(list).reset_index()
-            )
-            wins_df["Days Won"] = wins_df["timestamp"].apply(len)
-            wins_df = wins_df.sort_values("Days Won", ascending=False).head(10)
+        # Always show calendar view now
+        winners = winners.copy()
+        winners["date"] = winners["timestamp"].dt.date
+        winner_map = winners.set_index("date")["author_name"].to_dict()
 
-            items = [
-                html.Li(
-                    className="list-group-item d-flex justify-content-between align-items-center leaderboard-item",
-                    title=", ".join([d.strftime("%d %B %Y") for d in row["timestamp"]]),
-                    children=[
-                        html.Div(
-                            [
-                                html.Span(f"{i + 1}.", className="leaderboard-rank"),
-                                html.Span(row["author_name"]),
-                            ]
-                        ),
-                        html.Span(f"{row['Days Won']}", className="badge rounded-pill"),
-                    ],
-                )
-                for i, row in wins_df.iterrows()
-            ]
-            return html.Ul(items, className="list-group list-group-flush")
+        color_winner_map = {
+            date: color_map.get(name, "#6c757d")
+            for date, name in winner_map.items()
+        }
 
-        else:
-            winners["date"] = winners["timestamp"].dt.to_timestamp().dt.date
-            winner_map = winners.set_index("date")["author_name"].to_dict()
-
-            color_winner_map = {
-                date: color_map.get(name, "#6c757d")
-                for date, name in winner_map.items()
-            }
-
-            return html.Div(
-                generate_calendars(
-                    start_date_utc, end_date_utc, winner_map, color_winner_map
-                ),
-                style={"maxHeight": "500px", "overflowY": "auto"},
-            )
+        return html.Div(
+            generate_calendars(
+                start_date_utc, end_date_utc, winner_map, color_winner_map
+            ),
+            style={"maxHeight": "500px", "overflowY": "auto"},
+        )
 
     def generate_calendars(
         start_date: pd.Timestamp,
@@ -1128,7 +1172,7 @@ def register_callbacks(
             )
 
         months = []
-        current_date = datetime(start.year, start.month, 1)
+        current_date = datetime(start.year, start.month, 1).date()
 
         while current_date <= end:
             month_html = [
@@ -1189,18 +1233,23 @@ def register_callbacks(
                             )
                 weeks.append(html.Tr(week_html))
 
-            month_table = dbc.Table(
-                children=[html.Thead(header), html.Tbody(weeks)],
-                bordered=True,
-                size="sm",
-                className="calendar-table",
+            month_table = html.Div(
+                [
+                    *month_html,
+                    dbc.Table(
+                        children=[html.Thead(header), html.Tbody(weeks)],
+                        bordered=True,
+                        size="sm",
+                        className="calendar-table",
+                    ),
+                ]
             )
             months.append(month_table)
 
             if current_date.month == 12:
-                current_date = datetime(current_date.year + 1, 1, 1)
+                current_date = datetime(current_date.year + 1, 1, 1).date()
             else:
-                current_date = datetime(current_date.year, current_date.month + 1, 1)
+                current_date = datetime(current_date.year, current_date.month + 1, 1).date()
 
         return months
 
@@ -1366,6 +1415,8 @@ def register_callbacks(
             )
 
             message_content = row["content"]
+            # Resolve mentions in message content
+            message_content = resolve_mentions(message_content, user_id_to_name_map, role_map)
             if len(message_content) > 200:
                 message_content = message_content[:200] + "..."
             if not message_content:

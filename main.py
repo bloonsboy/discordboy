@@ -102,11 +102,26 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     list_cols = ["mentions", "mentioned_role_ids", "reactions"]
     for col in list_cols:
         if col in df_copy.columns:
-            df_copy[col] = df_copy[col].fillna("[]").apply(
-                lambda x: x if isinstance(x, (list, str)) else "[]"
-            )
+            # Handle both string JSON, numpy arrays, and lists
+            def parse_list_col(x):
+                if pd.isna(x) or x is None:
+                    return []
+                if isinstance(x, str):
+                    try:
+                        return json.loads(x)
+                    except (json.JSONDecodeError, ValueError):
+                        return []
+                if isinstance(x, list):
+                    return x
+                # Handle numpy arrays or other iterables
+                try:
+                    return list(x)
+                except (TypeError, ValueError):
+                    return []
+            
+            df_copy[col] = df_copy[col].apply(parse_list_col)
         else:
-            df_copy[col] = "[]"
+            df_copy[col] = [[] for _ in range(len(df_copy))]
 
     optional_cols = ["edited_at", "pinned", "content", "jump_url"]
     for col in optional_cols:
