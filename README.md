@@ -49,5 +49,5 @@ pip install -e .
 Make sure you have a .env file at the root of your project containing your DISCORD_TOKEN, and then run the main script:
 
 ```sh
-python appus.py
+python main.py
 ```

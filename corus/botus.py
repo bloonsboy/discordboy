@@ -23,21 +23,21 @@ def get_len_content(content_str: str) -> int:
     if not content_str:
         return 0
     s = content_str
-    s = re.sub(r"<a?:\w+:\d+>", "E", s)  # custom emoji
-    s = re.sub(r"<@!?\d+>", "M", s)  # user mentions
-    s = re.sub(r"<@&?\d+>", "M", s)  # role mentions
-    s = re.sub(r"<@#?\d+>", "M", s)  # channel mentions
-    s = re.sub(r"https?://\S+", "U", s)  # links
-    s = re.sub(r"```([\s\S]*?)```", r"\1", s)  # code blocks
-    s = re.sub(r"`([^`]*)`", r"\1", s)  # inline code
-    s = re.sub(r"\|\|([\s\S]*?)\|\|", r"\1", s)  # spoilers
-    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)  # bold
-    s = re.sub(r"\*([^*]+)\*", r"\1", s)  # italic
-    s = re.sub(r"_([^_]+)_", r"\1", s)  # italic
-    s = re.sub(r"__([^_]+)__", r"\1", s)  # underline
-    s = re.sub(r"~~([^~]+)~~", r"\1", s)  # strikethrough
-    s = re.sub(r"(?m)^>\s?", "", s)  # blockquotes
-    s = s.replace(" ", "")  # remove spaces
+    s = re.sub(r"<a?:\w+:\d+>", "E", s)
+    s = re.sub(r"<@!?\d+>", "M", s)
+    s = re.sub(r"<@&?\d+>", "M", s)
+    s = re.sub(r"<@#?\d+>", "M", s)
+    s = re.sub(r"https?://\S+", "U", s)
+    s = re.sub(r"```([\s\S]*?)```", r"\1", s)
+    s = re.sub(r"`([^`]*)`", r"\1", s)
+    s = re.sub(r"\|\|([\s\S]*?)\|\|", r"\1", s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+    s = re.sub(r"\*([^*]+)\*", r"\1", s)
+    s = re.sub(r"_([^_]+)_", r"\1", s)
+    s = re.sub(r"__([^_]+)__", r"\1", s)
+    s = re.sub(r"~~([^~]+)~~", r"\1", s)
+    s = re.sub(r"(?m)^>\s?", "", s)
+    s = s.replace(" ", "")
     return len(s)
 
 
@@ -59,7 +59,6 @@ async def fetch_channel_messages_as_df(
     start_time = datetime.now()
 
     try:
-        # Fetch main channel messages
         async for message in channel.history(
             limit=None, after=after_date, oldest_first=True
         ):
@@ -93,10 +92,8 @@ async def fetch_channel_messages_as_df(
 
         main_msg_count = len(messages_data)
 
-        # Fetch messages from threads (active + archived)
         threads_fetched = 0
         try:
-            # Active threads
             for thread in channel.threads:
                 threads_fetched += 1
                 async for message in thread.history(
@@ -135,7 +132,6 @@ async def fetch_channel_messages_as_df(
 
             # Archived threads
             async for thread in channel.archived_threads(limit=None):
-                threads_fetched += 1
                 async for message in thread.history(
                     limit=None, after=after_date, oldest_first=True
                 ):
@@ -278,15 +274,12 @@ async def run_bot_logic(
     if cache_df is None:
         cache_df = pd.DataFrame()
 
-    # Fetch channels sequentially and save after each channel
-    for i, channel in enumerate(text_channels, 1):
         logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
         try:
             df = await fetch_channel_messages_as_df(channel, cache_df)
             if not df.empty:
                 # Add new messages to cache
                 if cache_df.empty:
-                    cache_df = df
                     logging.info(f"Added {len(df)} messages from #{channel.name}")
                 else:
                     initial_count = len(cache_df)
@@ -299,7 +292,6 @@ async def run_bot_logic(
                 # Save to parquet after each channel
                 try:
                     cache_df.to_parquet(cache_path, index=False)
-                    logging.info(f"✓ Cache saved ({len(cache_df)} total messages)")
                 except Exception as e:
                     logging.error(f"Error saving parquet file: {e}")
         except Exception as e:

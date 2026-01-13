@@ -1,32 +1,20 @@
-# discordboy/dataus/constant.py
-
 DATA_DIR = "dataus"
 CACHE_FILENAME = "discord_messages_cache.parquet"
 SERVER_DATA_FILENAME = "server_data.json"
 STATS_FILENAME = "discord_server_stats.csv"
 MIN_MESSAGE_COUNT = 0
 
-# List of excluded IDs channels
 EXCLUDED_CHANNEL_IDS = [
-    "443310265233309696",  # log
-    "443135631288172569",  # test
-    "775707417286803466",  # zoepipougirl
-    "745615034201407610",  # mudae2
-    "519208892207595540",  # mudae
+    "443310265233309696",
+    "443135631288172569",
+    "775707417286803466",
+    "745615034201407610",
+    "519208892207595540",
 ]
 
-IDS_TO_EXCLUDE = [456226577798135808]  # ID deleted account
+IDS_TO_EXCLUDE = [456226577798135808]
 
-SMURF_IDS = [
-    # "452066520126849035", # daka1845
-    # "549991414642245643", # .uwu2
-    # "569321193270673408", # ersis5192
-    # "413995135601344512", # nqtqn
-    # "352786601216180224", # nathsmurf
-    # "422866133092139008", # zokander
-    # "685303232985169952", # lugrocha
-    # "307611097668780042", # kdamamadousakho
-]
+SMURF_IDS = []
 
 
 ID_NAME_MAP = {
