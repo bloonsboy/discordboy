@@ -13,8 +13,10 @@ from dataus.constant import (
     CACHE_FILENAME,
     DATA_DIR,
     EXCLUDED_CHANNEL_IDS,
+    ID_NAME_MAP,
     IDS_TO_EXCLUDE,
     MIN_MESSAGE_COUNT,
+    MUDAE_CHANNELS,
     SERVER_DATA_FILENAME,
     SMURF_IDS,
     STATS_FILENAME,
@@ -35,8 +37,8 @@ def process_and_save_stats(df: pd.DataFrame, filename: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     df_copy = df.copy()
-    excluded_channel_ids = [519208892207595540, 745615034201407610, 443134774291202088]
-    df_copy = df_copy[~df_copy["channel_id"].isin(excluded_channel_ids)]
+    excluded_ids = list(EXCLUDED_CHANNEL_IDS) + list(MUDAE_CHANNELS)
+    df_copy = df_copy[~df_copy["channel_id"].isin(excluded_ids)]
     df_copy["timestamp"] = pd.to_datetime(df_copy["timestamp"])
     df_copy["year"] = df_copy["timestamp"].dt.year
     yearly_counts = (
@@ -78,54 +80,36 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     df_copy["author_name"] = df_copy["author_id"].map(author_map)
     df_copy["channel_name"] = df_copy["channel_id"].map(channel_map)
 
-    df_copy["author_name"] = df_copy.apply(
-        lambda row: row["author_name"] if pd.notna(row["author_name"]) 
-        else row.get("author_discord_name", f"Ex-membre ({row['author_id']})"), 
+    mask_unknown = df_copy["author_name"].isna()
+    df_copy.loc[mask_unknown, "author_name"] = df_copy.loc[mask_unknown].apply(
+        lambda row: row.get("author_discord_name", f"Ex-membre ({row['author_id']})"),
         axis=1
     )
-    df_copy["created_at"] = pd.to_datetime(df_copy["created_at"])
+    df_copy["created_at"] = pd.to_datetime(df_copy["created_at"], utc=True)
 
     EXCLUDE_LIST = list(IDS_TO_EXCLUDE) + list(SMURF_IDS)
     df_copy = df_copy[~df_copy["author_id"].isin(EXCLUDE_LIST)]
 
-    if MIN_MESSAGE_COUNT > 0:
-        total_counts = df_copy["author_name"].value_counts()
-        active_users = total_counts[total_counts >= MIN_MESSAGE_COUNT].index
-        df_copy = df_copy[df_copy["author_name"].isin(active_users)]
-        active_user_count = len(active_users)
-    else:
-        active_user_count = len(df_copy["author_name"].unique())
+    active_user_count = len(df_copy["author_name"].unique())
 
     if "top_reaction_count" in df_copy.columns:
         df_copy["total_reaction_count"] = df_copy["top_reaction_count"]
 
-    for col in [
-        "len_content",
-        "total_reaction_count",
-        "attachments",
-        "embeds",
-    ]:
-        if col in df_copy.columns:
-            df_copy[col] = df_copy[col].fillna(0).astype(int)
-        else:
-            df_copy[col] = 0
+    numeric_cols = ["len_content", "total_reaction_count", "attachments", "embeds"]
+    for col in numeric_cols:
+        df_copy[col] = df_copy.get(col, 0).fillna(0).astype(int) if col in df_copy.columns else 0
 
-    for col in ["mentions", "mentioned_role_ids", "reactions"]:
+    list_cols = ["mentions", "mentioned_role_ids", "reactions"]
+    for col in list_cols:
         if col in df_copy.columns:
-            df_copy[col] = (
-                df_copy[col]
-                .fillna("[]")
-                .apply(lambda x: x if isinstance(x, (list, str)) else "[]")
+            df_copy[col] = df_copy[col].fillna("[]").apply(
+                lambda x: x if isinstance(x, (list, str)) else "[]"
             )
         else:
             df_copy[col] = "[]"
 
-    for col in [
-        "edited_at",
-        "pinned",
-        "content",
-        "jump_url",
-    ]:
+    optional_cols = ["edited_at", "pinned", "content", "jump_url"]
+    for col in optional_cols:
         if col not in df_copy.columns:
             df_copy[col] = pd.NA
 
@@ -173,11 +157,9 @@ async def main():
     if args.channels:
         try:
             channel_ids = [int(ch_id.strip()) for ch_id in args.channels.split(",")]
-            logging.info(f"Will fetch only channels: {channel_ids}")
-        except ValueError:
-            logging.error(
-                "Invalid channel IDs format. Please use comma-separated integers."
-            )
+            logging.info(f"Will fetch {len(channel_ids)} specific channel(s)")
+        except ValueError as e:
+            logging.error(f"Invalid channel IDs format: {e}")
             return
 
     dashboard_df, server_data = await run_bot(
@@ -187,28 +169,23 @@ async def main():
         SERVER_DATA_FILENAME,
         server_name,
         channel_ids,
+        EXCLUDED_CHANNEL_IDS,
     )
 
-    if not dashboard_df.empty:
-        processed_df = prepare_dataframe(dashboard_df, server_data)
-
-        if processed_df.empty:
-            logging.warning(
-                "No data remaining after filtering. Dashboard cannot be launched."
-            )
-            return
-
-        process_and_save_stats(processed_df, os.path.join(DATA_DIR, STATS_FILENAME))
-
-        app = create_app(
-            processed_df,
-            server_data,
-            EXCLUDED_CHANNEL_IDS,
-        )
-        logging.info("Launching Dash web server on http://localhost:8050/")
-        app.run(host="0.0.0.0", port=8050, debug=False)
-    else:
+    if dashboard_df.empty:
         logging.warning("No data was collected. Program will exit.")
+        return
+
+    processed_df = prepare_dataframe(dashboard_df, server_data)
+    if processed_df.empty:
+        logging.warning("No data remaining after filtering. Dashboard cannot be launched.")
+        return
+
+    process_and_save_stats(processed_df, os.path.join(DATA_DIR, STATS_FILENAME))
+
+    app = create_app(processed_df, server_data, MUDAE_CHANNELS)
+    logging.info("Launching Dash web server on http://localhost:8050/")
+    app.run(host="0.0.0.0", port=8050, debug=False)
 
 
 if __name__ == "__main__":

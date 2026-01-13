@@ -22,26 +22,50 @@ client = discord.Client(intents=intents)
 bot_data_future = None
 
 
+def create_message_data(message: discord.Message) -> dict:
+    return {
+        "message_id": message.id,
+        "author_id": message.author.id,
+        "author_discord_name": message.author.name,
+        "channel_id": message.channel.id,
+        "content": message.content,
+        "len_content": get_len_content(message.content),
+        "created_at": message.created_at,
+        "edited_at": message.edited_at,
+        "attachments": len(message.attachments),
+        "embeds": len(message.embeds),
+        "mentions": [m.id for m in message.mentions],
+        "mentioned_role_ids": [r.id for r in message.role_mentions],
+        "top_reaction_emoji": str(message.reactions[0].emoji) if message.reactions else None,
+        "top_reaction_count": int(message.reactions[0].count) if message.reactions else 0,
+        "pinned": message.pinned,
+        "jump_url": message.jump_url,
+    }
+
+
 def get_len_content(content_str: str) -> int:
     if not content_str:
         return 0
     s = content_str
-    s = re.sub(r"<a?:\w+:\d+>", "E", s)
-    s = re.sub(r"<@!?\d+>", "M", s)
-    s = re.sub(r"<@&?\d+>", "M", s)
-    s = re.sub(r"<@#?\d+>", "M", s)
-    s = re.sub(r"https?://\S+", "U", s)
-    s = re.sub(r"```([\s\S]*?)```", r"\1", s)
-    s = re.sub(r"`([^`]*)`", r"\1", s)
-    s = re.sub(r"\|\|([\s\S]*?)\|\|", r"\1", s)
-    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
-    s = re.sub(r"\*([^*]+)\*", r"\1", s)
-    s = re.sub(r"_([^_]+)_", r"\1", s)
-    s = re.sub(r"__([^_]+)__", r"\1", s)
-    s = re.sub(r"~~([^~]+)~~", r"\1", s)
-    s = re.sub(r"(?m)^>\s?", "", s)
-    s = s.replace(" ", "")
-    return len(s)
+    patterns = [
+        (r"<a?:\w+:\d+>", "E"),
+        (r"<@!?\d+>", "M"),
+        (r"<@&?\d+>", "M"),
+        (r"<@#?\d+>", "M"),
+        (r"https?://\S+", "U"),
+        (r"```([\s\S]*?)```", r"\1"),
+        (r"`([^`]*)`", r"\1"),
+        (r"\|\|([\s\S]*?)\|\|", r"\1"),
+        (r"\*\*([^*]+)\*\*", r"\1"),
+        (r"\*([^*]+)\*", r"\1"),
+        (r"_([^_]+)_", r"\1"),
+        (r"__([^_]+)__", r"\1"),
+        (r"~~([^~]+)~~", r"\1"),
+        (r"(?m)^>\s?", ""),
+    ]
+    for pattern, repl in patterns:
+        s = re.sub(pattern, repl, s)
+    return len(s.replace(" ", ""))
 
 
 async def fetch_channel_messages_as_df(
@@ -56,7 +80,6 @@ async def fetch_channel_messages_as_df(
     after_str = (
         f"after {after_date.strftime('%Y-%m-%d')}" if after_date else "from beginning"
     )
-    logging.info(f"[START] Fetching #{channel.name} ({after_str})")
 
     messages_data = []
     start_time = datetime.now()
@@ -69,31 +92,9 @@ async def fetch_channel_messages_as_df(
             if message.author.bot:
                 continue
 
-            messages_data.append(
-                {
-                    "message_id": message.id,
-                    "author_id": message.author.id,
-                    "author_discord_name": message.author.name,
-                    "channel_id": message.channel.id,
-                    "content": message.content,
-                    "len_content": get_len_content(message.content),
-                    "created_at": message.created_at,
-                    "edited_at": message.edited_at,
-                    "attachments": len(message.attachments),
-                    "embeds": len(message.embeds),
-                    "mentions": [m.id for m in message.mentions],
-                    "mentioned_role_ids": [r.id for r in message.role_mentions],
-                    "top_reaction_emoji": (
-                        str(message.reactions[0].emoji) if message.reactions else None
-                    ),
-                    "top_reaction_count": (
-                        int(message.reactions[0].count) if message.reactions else 0
-                    ),
-                    "pinned": message.pinned,
-                    "jump_url": message.jump_url,
-                }
-            )
-            
+            messages_data.append(create_message_data(message))
+            if client.excluded_channel_ids is not None and message.channel.id in client.excluded_channel_ids:
+                continue
             progress_counter += 1
             if progress_counter % 10000 == 0:
                 logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name}...")
@@ -114,34 +115,7 @@ async def fetch_channel_messages_as_df(
                     if progress_counter % 10000 == 0:
                         logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name} (threads)...")
                     
-                    messages_data.append(
-                        {
-                            "message_id": message.id,
-                            "author_id": message.author.id,
-                            "author_discord_name": message.author.name,
-                            "channel_id": thread.id,
-                            "content": message.content,
-                            "len_content": get_len_content(message.content),
-                            "created_at": message.created_at,
-                            "edited_at": message.edited_at,
-                            "attachments": len(message.attachments),
-                            "embeds": len(message.embeds),
-                            "mentions": [m.id for m in message.mentions],
-                            "mentioned_role_ids": [r.id for r in message.role_mentions],
-                            "top_reaction_emoji": (
-                                str(message.reactions[0].emoji)
-                                if message.reactions
-                                else None
-                            ),
-                            "top_reaction_count": (
-                                int(message.reactions[0].count)
-                                if message.reactions
-                                else 0
-                            ),
-                            "pinned": message.pinned,
-                            "jump_url": message.jump_url,
-                        }
-                    )
+                    messages_data.append(create_message_data(message))
 
             async for thread in channel.archived_threads(limit=None):
                 async for message in thread.history(
@@ -154,43 +128,18 @@ async def fetch_channel_messages_as_df(
                     if progress_counter % 10000 == 0:
                         logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name} (archived threads)...")
                     
-                    messages_data.append(
-                        {
-                            "message_id": message.id,
-                            "author_id": message.author.id,
-                            "author_discord_name": message.author.name,
-                            "channel_id": thread.id,
-                            "content": message.content,
-                            "len_content": get_len_content(message.content),
-                            "created_at": message.created_at,
-                            "edited_at": message.edited_at,
-                            "attachments": len(message.attachments),
-                            "embeds": len(message.embeds),
-                            "mentions": [m.id for m in message.mentions],
-                            "mentioned_role_ids": [r.id for r in message.role_mentions],
-                            "top_reaction_emoji": (
-                                str(message.reactions[0].emoji)
-                                if message.reactions
-                                else None
-                            ),
-                            "top_reaction_count": (
-                                int(message.reactions[0].count)
-                                if message.reactions
-                                else 0
-                            ),
-                            "pinned": message.pinned,
-                            "jump_url": message.jump_url,
-                        }
-                    )
+                    messages_data.append(create_message_data(message))
         except Exception as e:
             logging.warning(f"Error fetching threads for #{channel.name}: {e}")
 
         thread_msg_count = len(messages_data) - main_msg_count
         elapsed = (datetime.now() - start_time).total_seconds()
         rate = len(messages_data) / elapsed if elapsed > 0 else 0
-        logging.info(
-            f"[END] #{channel.name}: {len(messages_data)} msgs ({main_msg_count} main + {thread_msg_count} threads from {threads_fetched} threads) in {elapsed:.1f}s ({rate:.0f} msg/s)"
-        )
+        
+        if len(messages_data) > 0:
+            logging.info(
+                f"[END] #{channel.name}: {len(messages_data)} msgs ({main_msg_count} main + {thread_msg_count} threads from {threads_fetched} threads) in {elapsed:.1f}s ({rate:.0f} msg/s)"
+            )
 
     except discord.errors.Forbidden:
         logging.warning(f"No access to channel #{channel.name}.")
@@ -206,6 +155,7 @@ async def run_bot_logic(
     server_data_file: str,
     server_name: str = None,
     channel_ids: list = None,
+    excluded_channel_ids: list = None,
 ) -> None:
     if server_name:
         guild = discord.utils.get(client.guilds, name=server_name)
@@ -279,6 +229,7 @@ async def run_bot_logic(
         c
         for c in guild.text_channels
         if c.permissions_for(guild.me).read_message_history
+        and (excluded_channel_ids is None or c.id not in excluded_channel_ids)
     ]
 
     if channel_ids:
@@ -290,10 +241,11 @@ async def run_bot_logic(
     if cache_df is None:
         cache_df = pd.DataFrame()
 
-        logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
+    for i, channel in enumerate(text_channels, 1):
         try:
             df = await fetch_channel_messages_as_df(channel, cache_df)
             if not df.empty:
+                logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
                 if cache_df.empty:
                     logging.info(f"Added {len(df)} messages from #{channel.name}")
                 else:
@@ -329,6 +281,7 @@ async def on_ready():
             client.server_data_file,
             client.server_name,
             client.channel_ids,
+            client.excluded_channel_ids,
         )
     )
 
@@ -340,6 +293,7 @@ async def run_bot(
     server_data_file: str,
     server_name: str = None,
     channel_ids: list = None,
+    excluded_channel_ids: list = None,
     reaction_batch_size: int = 10,
 ) -> None:
     global bot_data_future
@@ -350,6 +304,7 @@ async def run_bot(
     client.server_data_file = server_data_file
     client.server_name = server_name
     client.channel_ids = channel_ids
+    client.excluded_channel_ids = excluded_channel_ids
     client.reaction_batch_size = reaction_batch_size
 
     try:

@@ -8,10 +8,55 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import html
+from dash import dcc, html
 from dash.dependencies import Input, Output, State
 
-from dataus.constant import EXCLUDED_CHANNEL_IDS
+from dataus.constant import EXCLUDED_CHANNEL_IDS, MIN_MESSAGE_COUNT
+
+
+def create_table_from_figure(fig: go.Figure) -> html.Div:
+    if not fig or not fig.data:
+        return html.P("No data available", className="text-muted")
+    
+    rows = []
+    headers = []
+    
+    for trace in fig.data:
+        if hasattr(trace, 'x') and hasattr(trace, 'y'):
+            trace_name = trace.name if trace.name else "Value"
+            if not headers:
+                headers = ["X", trace_name]
+                rows = [[x, y] for x, y in zip(trace.x, trace.y)]
+            else:
+                headers.append(trace_name)
+                for i, (x, y) in enumerate(zip(trace.x, trace.y)):
+                    if i < len(rows):
+                        rows[i].append(y)
+    
+    if not rows:
+        return html.P("No data to display", className="text-muted")
+    
+    table_header = [html.Thead(html.Tr([html.Th(h) for h in headers]))]
+    table_body = [html.Tbody([html.Tr([html.Td(cell) for cell in row]) for row in rows])]
+    
+    return dbc.Table(
+        table_header + table_body,
+        bordered=True,
+        hover=True,
+        striped=True,
+        responsive=True,
+        className="table-sm",
+        style={"maxHeight": "500px", "overflowY": "auto"}
+    )
+
+
+def render_view(content, view_toggle: str, is_figure: bool = True):
+    if view_toggle == "table" and is_figure:
+        return create_table_from_figure(content)
+    elif view_toggle == "graph" and is_figure:
+        return dcc.Graph(figure=content, style={"height": "600px"})
+    else:
+        return content
 
 SIDEBAR_STYLE = {
     "position": "fixed",
@@ -174,7 +219,7 @@ def register_callbacks(
         )
 
     @app.callback(
-        Output("evolution-graph", "figure"),
+        Output("evolution-container", "children"),
         Output("user-dropdown", "options"),
         Output("user-dropdown", "value"),
         Output("dynamic-styles", "children"),
@@ -184,13 +229,13 @@ def register_callbacks(
         Output("date-range-dropdown", "value"),
         Output("date-picker-range", "start_date"),
         Output("date-picker-range", "end_date"),
-        Output("median-length-graph", "figure"),
-        Output("distribution-graph", "figure"),
+        Output("median-length-container", "children"),
+        Output("distribution-container", "children"),
         Output("monthly-leaderboard-msg", "children"),
         Output("daily-leaderboard-msg-container", "children"),
         Output("monthly-leaderboard-char", "children"),
         Output("daily-leaderboard-char-container", "children"),
-        Output("mentioned-users-graph", "figure"),
+        Output("mentioned-users-container", "children"),
         Output("top-reacted-messages", "children"),
         Input("user-dropdown", "value"),
         Input("date-picker-range", "start_date"),
@@ -204,6 +249,10 @@ def register_callbacks(
         Input("distribution-time-unit", "value"),
         Input("daily-leaderboard-toggle", "value"),
         Input("mudae-filter-switch", "value"),
+        Input("evolution-view-toggle", "value"),
+        Input("distribution-view-toggle", "value"),
+        Input("median-length-view-toggle", "value"),
+        Input("mentioned-users-view-toggle", "value"),
         State("date-picker-range", "min_date_allowed"),
         State("date-picker-range", "max_date_allowed"),
     )
@@ -220,6 +269,10 @@ def register_callbacks(
         dist_time_unit: str,
         daily_toggle: bool,
         mudae_switch_value: bool,
+        evolution_view_toggle: str,
+        distribution_view_toggle: str,
+        median_length_view_toggle: str,
+        mentioned_users_view_toggle: str,
         min_date_allowed: str,
         max_date_allowed: str,
     ) -> tuple:
@@ -227,6 +280,15 @@ def register_callbacks(
         triggered_id = (
             ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
         )
+        
+        print(f"[DEBUG] Callback triggered by: {triggered_id}")
+        print(f"[DEBUG] DataFrame shape: {df.shape}")
+        print(f"[DEBUG] selected_user_names: {selected_user_names}")
+        print(f"[DEBUG] top_n: {top_n}")
+
+        # S'assurer que les timestamps sont en UTC
+        if df["timestamp"].dt.tz is None:
+            df["timestamp"] = df["timestamp"].dt.tz_localize("UTC")
 
         if not mudae_switch_value:
             base_df = df[~df["channel_id"].isin(mudae_ids_set)].copy()
@@ -238,9 +300,10 @@ def register_callbacks(
         elif virgule_filter == "no_virgule":
             author_id_pool = non_virgule_author_ids
         else:
-            author_id_pool = current_member_ids_int
+            author_id_pool = None
 
-        base_df = base_df[base_df["author_id"].isin(author_id_pool)]
+        if author_id_pool is not None:
+            base_df = base_df[base_df["author_id"].isin(author_id_pool)]
         base_df["author_name"] = base_df["author_id"].map(user_id_to_name_map)
         base_df = base_df.dropna(subset=["author_name"])
 
@@ -322,34 +385,44 @@ def register_callbacks(
 
         user_counts_all_time = base_df["author_name"].value_counts()
         sorted_users_by_count = user_counts_all_time.index.tolist()
+        
+        print(f"[DEBUG] base_df shape after filters: {base_df.shape}")
+        print(f"[DEBUG] user_counts_all_time length: {len(user_counts_all_time)}")
+        print(f"[DEBUG] Top 5 users: {user_counts_all_time.head().to_dict()}")
 
-        user_value = selected_user_names
-        if (
-            triggered_id
-            in [
-                "top-n-dropdown",
-                "date-picker-range",
-                "metric-selector",
-                "date-range-dropdown",
-                "virgule-filter",
-                "mudae-filter-switch",
-            ]
-            or triggered_id is None
-        ):
-            if top_n != "custom" and not user_counts_period.empty:
+        # Au chargement initial ou changement de filtre, définir les utilisateurs par défaut
+        if triggered_id is None or triggered_id in [
+            "top-n-dropdown",
+            "date-picker-range",
+            "metric-selector",
+            "date-range-dropdown",
+            "virgule-filter",
+            "mudae-filter-switch",
+        ]:
+            if top_n != "custom":
                 try:
                     n = int(top_n)
-                    user_value = user_counts_period.nlargest(n).index.tolist()
-                except ValueError:
-                    pass
-            elif top_n != "custom" and user_counts_period.empty:
-                user_value = []
-
-        if user_value is None:
-            user_value = []
-
+                    # Utiliser d'abord la période, sinon all-time
+                    if not user_counts_period.empty:
+                        user_value = user_counts_period.nlargest(n).index.tolist()
+                    else:
+                        user_value = user_counts_all_time.nlargest(n).index.tolist()
+                except (ValueError, AttributeError):
+                    user_value = user_counts_all_time.nlargest(10).index.tolist() if not user_counts_all_time.empty else []
+            else:
+                user_value = selected_user_names if selected_user_names else []
+        else:
+            # L'utilisateur a modifié la sélection manuellement
+            user_value = selected_user_names if selected_user_names else []
+        
+        print(f"[DEBUG] Final user_value: {user_value}")
+        
         user_options = []
         for author_name in sorted_users_by_count:
+            message_count = user_counts_all_time.get(author_name, 0)
+            if message_count < MIN_MESSAGE_COUNT:
+                continue
+                
             author_id = name_to_user_id_map.get(author_name)
             if not author_id:
                 continue
@@ -510,8 +583,13 @@ def register_callbacks(
             dff, "characters", daily_toggle, start_date_utc, end_date_utc, color_map
         )
 
+        evolution_content = render_view(fig_evolution, evolution_view_toggle, True)
+        distribution_content = render_view(fig_distribution, distribution_view_toggle, True)
+        median_length_content = render_view(fig_median_length, median_length_view_toggle, True)
+        mentioned_users_content = render_view(fig_mentioned, mentioned_users_view_toggle, True)
+
         return (
-            fig_evolution,
+            evolution_content,
             user_options,
             user_value,
             final_styles,
@@ -521,13 +599,13 @@ def register_callbacks(
             new_date_range_period,
             output_start_date,
             output_end_date,
-            fig_median_length,
-            fig_distribution,
+            median_length_content,
+            distribution_content,
             monthly_leaderboard_msg,
             daily_leaderboard_msg,
             monthly_leaderboard_char,
             daily_leaderboard_char,
-            fig_mentioned,
+            mentioned_users_content,
             top_reactions_component,
         )
 

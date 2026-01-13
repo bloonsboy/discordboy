@@ -215,20 +215,33 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                     dbc.Card(
                         dbc.CardBody(
                             [
-                                dcc.Slider(
-                                    id="evolution-graph-selector",
-                                    min=0,
-                                    max=1,
-                                    step=None,
-                                    marks={0: "Cumulative", 1: "Monthly"},
-                                    value=0,
-                                    className="mb-4",
-                                ),
+                                dbc.Row([
+                                    dbc.Col([
+                                        dcc.Slider(
+                                            id="evolution-graph-selector",
+                                            min=0,
+                                            max=1,
+                                            step=None,
+                                            marks={0: "Cumulative", 1: "Monthly"},
+                                            value=0,
+                                            className="mb-4",
+                                        ),
+                                    ], width=10),
+                                    dbc.Col([
+                                        dbc.RadioItems(
+                                            id="evolution-view-toggle",
+                                            options=[
+                                                {"label": "📊 Graph", "value": "graph"},
+                                                {"label": "📋 Table", "value": "table"},
+                                            ],
+                                            value="graph",
+                                            inline=True,
+                                            className="text-end",
+                                        ),
+                                    ], width=2),
+                                ]),
                                 dcc.Loading(
-                                    dcc.Graph(
-                                        id="evolution-graph",
-                                        style={"height": "600px"},
-                                    )
+                                    html.Div(id="evolution-container")
                                 ),
                             ]
                         ),
@@ -244,19 +257,35 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                     dbc.Card(
                         dbc.CardBody(
                             [
-                                dbc.RadioItems(
-                                    id="distribution-time-unit",
-                                    options=[
-                                        {"label": "Hour of Day", "value": "hour"},
-                                        {"label": "Day of Week", "value": "weekday"},
-                                        {"label": "Month", "value": "month"},
-                                        {"label": "Year", "value": "year"},
-                                    ],
-                                    value="hour",
-                                    inline=True,
-                                    className="mb-3",
-                                ),
-                                dcc.Loading(dcc.Graph(id="distribution-graph")),
+                                dbc.Row([
+                                    dbc.Col([
+                                        dbc.RadioItems(
+                                            id="distribution-time-unit",
+                                            options=[
+                                                {"label": "Hour of Day", "value": "hour"},
+                                                {"label": "Day of Week", "value": "weekday"},
+                                                {"label": "Month", "value": "month"},
+                                                {"label": "Year", "value": "year"},
+                                            ],
+                                            value="hour",
+                                            inline=True,
+                                            className="mb-3",
+                                        ),
+                                    ], width=10),
+                                    dbc.Col([
+                                        dbc.RadioItems(
+                                            id="distribution-view-toggle",
+                                            options=[
+                                                {"label": "📊 Graph", "value": "graph"},
+                                                {"label": "📋 Table", "value": "table"},
+                                            ],
+                                            value="graph",
+                                            inline=True,
+                                            className="text-end",
+                                        ),
+                                    ], width=2),
+                                ]),
+                                dcc.Loading(html.Div(id="distribution-container")),
                             ]
                         ),
                         className="shadow-sm mb-4",
@@ -267,12 +296,28 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 dbc.Card(
                                     dbc.CardBody(
                                         [
-                                            html.H5(
-                                                "Median Message Length (Characters)",
-                                                className="card-title",
-                                            ),
+                                            dbc.Row([
+                                                dbc.Col([
+                                                    html.H5(
+                                                        "Median Message Length (Characters)",
+                                                        className="card-title",
+                                                    ),
+                                                ], width=8),
+                                                dbc.Col([
+                                                    dbc.RadioItems(
+                                                        id="median-length-view-toggle",
+                                                        options=[
+                                                            {"label": "📊", "value": "graph"},
+                                                            {"label": "📋", "value": "table"},
+                                                        ],
+                                                        value="graph",
+                                                        inline=True,
+                                                        className="text-end",
+                                                    ),
+                                                ], width=4),
+                                            ]),
                                             dcc.Loading(
-                                                dcc.Graph(id="median-length-graph")
+                                                html.Div(id="median-length-container")
                                             ),
                                         ]
                                     ),
@@ -285,12 +330,28 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 dbc.Card(
                                     dbc.CardBody(
                                         [
-                                            html.H5(
-                                                "Most Mentioned Users (@)",
-                                                className="card-title",
-                                            ),
+                                            dbc.Row([
+                                                dbc.Col([
+                                                    html.H5(
+                                                        "Most Mentioned Users (@)",
+                                                        className="card-title",
+                                                    ),
+                                                ], width=8),
+                                                dbc.Col([
+                                                    dbc.RadioItems(
+                                                        id="mentioned-users-view-toggle",
+                                                        options=[
+                                                            {"label": "📊", "value": "graph"},
+                                                            {"label": "📋", "value": "table"},
+                                                        ],
+                                                        value="graph",
+                                                        inline=True,
+                                                        className="text-end",
+                                                    ),
+                                                ], width=4),
+                                            ]),
                                             dcc.Loading(
-                                                dcc.Graph(id="mentioned-users-graph")
+                                                html.Div(id="mentioned-users-container")
                                             ),
                                         ]
                                     ),
