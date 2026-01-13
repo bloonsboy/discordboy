@@ -64,7 +64,15 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
 
     df_copy = df.copy()
 
+    # Créer un mapping des auteurs à partir des membres actuels
     author_map = {int(k): v["name"] for k, v in server_data.get("members", {}).items()}
+    
+    # Ajouter les noms depuis ID_NAME_MAP pour les membres qui ont quitté le serveur
+    for id_str, name in ID_NAME_MAP.items():
+        author_id = int(id_str)
+        if author_id not in author_map:
+            author_map[author_id] = name
+    
     channel_map = {
         int(k): v["name"] for k, v in server_data.get("channels", {}).items()
     }
@@ -72,7 +80,12 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     df_copy["author_name"] = df_copy["author_id"].map(author_map)
     df_copy["channel_name"] = df_copy["channel_id"].map(channel_map)
 
-    df_copy = df_copy.dropna(subset=["author_name"])
+    # Pour les membres inconnus (ni dans le serveur ni dans ID_NAME_MAP), utilisez leur pseudo Discord
+    df_copy["author_name"] = df_copy.apply(
+        lambda row: row["author_name"] if pd.notna(row["author_name"]) 
+        else row.get("author_discord_name", f"Ex-membre ({row['author_id']})"), 
+        axis=1
+    )
     df_copy["created_at"] = pd.to_datetime(df_copy["created_at"])
 
     EXCLUDE_LIST = list(IDS_TO_EXCLUDE) + list(SMURF_IDS)

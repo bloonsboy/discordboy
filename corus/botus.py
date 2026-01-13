@@ -70,6 +70,7 @@ async def fetch_channel_messages_as_df(
                 {
                     "message_id": message.id,
                     "author_id": message.author.id,
+                    "author_discord_name": message.author.name,
                     "channel_id": message.channel.id,
                     "content": message.content,
                     "len_content": get_len_content(message.content),
@@ -107,6 +108,7 @@ async def fetch_channel_messages_as_df(
                         {
                             "message_id": message.id,
                             "author_id": message.author.id,
+                            "author_discord_name": message.author.name,
                             "channel_id": thread.id,
                             "content": message.content,
                             "len_content": get_len_content(message.content),
@@ -143,6 +145,7 @@ async def fetch_channel_messages_as_df(
                         {
                             "message_id": message.id,
                             "author_id": message.author.id,
+                            "author_discord_name": message.author.name,
                             "channel_id": thread.id,
                             "content": message.content,
                             "len_content": get_len_content(message.content),
@@ -270,39 +273,39 @@ async def run_bot_logic(
         logging.info(f"Filtered to {len(text_channels)} channels")
 
     logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
-    all_dfs = []
+    
+    # Initialize cache_df as empty DataFrame if None
+    if cache_df is None:
+        cache_df = pd.DataFrame()
 
-    # Fetch channels sequentially - discord.py handles rate limits automatically
+    # Fetch channels sequentially and save after each channel
     for i, channel in enumerate(text_channels, 1):
         logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
         try:
             df = await fetch_channel_messages_as_df(channel, cache_df)
             if not df.empty:
-                all_dfs.append(df)
+                # Add new messages to cache
+                if cache_df.empty:
+                    cache_df = df
+                    logging.info(f"Added {len(df)} messages from #{channel.name}")
+                else:
+                    initial_count = len(cache_df)
+                    cache_df = pd.concat([cache_df, df], ignore_index=True).drop_duplicates(
+                        subset=["message_id"], keep="last"
+                    )
+                    new_count = len(cache_df) - initial_count
+                    logging.info(f"Added {new_count} new messages from #{channel.name}")
+                
+                # Save to parquet after each channel
+                try:
+                    cache_df.to_parquet(cache_path, index=False)
+                    logging.info(f"✓ Cache saved ({len(cache_df)} total messages)")
+                except Exception as e:
+                    logging.error(f"Error saving parquet file: {e}")
         except Exception as e:
             logging.exception(f"Error fetching #{channel.name}")
 
-    valid_dfs = [df for df in all_dfs if not df.empty]
-
-    if not valid_dfs and cache_df is None:
-        final_df = pd.DataFrame()
-    elif not valid_dfs and cache_df is not None:
-        final_df = cache_df
-    else:
-        new_data_df = pd.concat(valid_dfs, ignore_index=True)
-        if cache_df is not None:
-            logging.info(f"Adding {len(new_data_df)} new messages.")
-            final_df = pd.concat(
-                [cache_df, new_data_df], ignore_index=True
-            ).drop_duplicates(subset=["message_id"], keep="last")
-        else:
-            logging.info(f"Creating new cache with {len(new_data_df)} messages.")
-            final_df = new_data_df
-
-        try:
-            final_df.to_parquet(cache_path, index=False)
-        except Exception as e:
-            logging.error(f"Error saving parquet file: {e}")
+    final_df = cache_df
 
     await client.close()
     global bot_data_future
