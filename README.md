@@ -36,6 +36,7 @@ Next, you need to activate the environment in your terminal session.
 source discordboy/bin/activate
 ```
 
+
 ### 3. Install Dependencies
 
 With the virtual environment active, use pip. pip will automatically read the pyproject.toml file and install all listed dependencies.
@@ -44,7 +45,25 @@ With the virtual environment active, use pip. pip will automatically read the py
 pip install -e .
 ```
 
-### 4. Launch the Application
+### 4. Configure Firebase (Firestore)
+
+Pour utiliser Firestore, il te faut un projet Firebase et un fichier de credentials (JSON) :
+
+1. Va sur https://console.firebase.google.com/ et crée un projet.
+2. Ajoute une application (Web ou autre) et génère une clé de service (Service Account Key).
+3. Télécharge le fichier JSON et place-le à la racine du projet (ex : `firebase-credentials.json`).
+4. Ajoute la variable d’environnement suivante :
+
+**Windows :**
+```sh
+$env:GOOGLE_APPLICATION_CREDENTIALS="./firebase-credentials.json"
+```
+**Linux/macOS :**
+```sh
+export GOOGLE_APPLICATION_CREDENTIALS=./firebase-credentials.json
+```
+
+### 5. Launch the Application
 
 Make sure you have a .env file at the root of your project containing your DISCORD_TOKEN, and then run the main script:
 

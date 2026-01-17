@@ -82,7 +82,7 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
 
     mask_unknown = df_copy["author_name"].isna()
     df_copy.loc[mask_unknown, "author_name"] = df_copy.loc[mask_unknown].apply(
-        lambda row: row.get("author_discord_name", f"Ex-membre ({row['author_id']})"),
+        lambda row: f"Ex-membre ({row['author_id']})",
         axis=1
     )
     df_copy["created_at"] = pd.to_datetime(df_copy["created_at"], utc=True)
@@ -148,68 +148,125 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     return df_copy
 
 
+
 async def main():
     parser = argparse.ArgumentParser(description="Discord Activity Dashboard")
-    parser.add_argument(
-        "--server",
-        type=str,
-        default=None,
-        help="Name of the Discord server to scrape (e.g., --server 'Virgule du 4')",
-    )
-    parser.add_argument(
-        "--channels",
-        type=str,
-        default=None,
-        help="Comma-separated list of channel IDs to fetch (e.g., --channels 123456789,987654321)",
-    )
-    parser.add_argument(
-        "--throttle-every",
-        type=int,
-        default=40,
-        help="Sleep after this many messages per channel",
-    )
+    parser.add_argument("--web-only", action="store_true", help="Lancer uniquement le serveur web")
+    parser.add_argument("--scrape-channel", type=str, default=None, help="ID du channel à scraper (ex: --scrape-channel 123456789)")
+    parser.add_argument("--scrape-server", action="store_true", help="Lancer le scraping du serveur entier")
+    parser.add_argument("--web", action="store_true", help="Lancer le serveur web après scraping")
+    parser.add_argument("--all", action="store_true", help="Lancer scraping serveur + web (équivalent à --scrape-server --web)")
+    parser.add_argument("--server", type=str, default=None, help="Nom du serveur Discord à scraper")
     args = parser.parse_args()
 
     if not DISCORD_TOKEN:
         logging.error("DISCORD_TOKEN is not set! Please check your .env file.")
         return
 
-    server_name = args.server
-    if server_name:
-        logging.info(f"Will search for server: {server_name}")
-    else:
-        logging.info("No server specified. Will use the first available server.")
-
-    channel_ids = None
-    if args.channels:
-        try:
-            channel_ids = [int(ch_id.strip()) for ch_id in args.channels.split(",")]
-            logging.info(f"Will fetch {len(channel_ids)} specific channel(s)")
-        except ValueError as e:
-            logging.error(f"Invalid channel IDs format: {e}")
+    # Mode 1 : Lancer uniquement le serveur web
+    if args.web_only:
+        # Récupération des messages depuis Firestore
+        from corus.firestorus import FirestoreClient
+        firestore = FirestoreClient.get_instance()
+        collection_name = os.getenv("FIRESTORE_COLLECTION", "messages")
+        server_id = args.server
+        if not server_id:
+            logging.error("Veuillez fournir --server pour identifier le serveur à afficher.")
             return
+        # Récupérer tous les messages du serveur
+        # On suppose que la structure est: collection_name/server_id/channel_id/message_id
+        server_ref = firestore.db.collection(collection_name).document(server_id)
+        channels = server_ref.collections()
+        all_messages = []
+        server_data = {"roles": {}, "channels": {}, "members": {}}
+        for channel in channels:
+            channel_id = channel.id
+            docs = channel.stream()
+            for doc in docs:
+                msg = doc.to_dict()
+                all_messages.append(msg)
+                # Collecte des infos pour server_data (channels, membres, etc.)
+                if channel_id not in server_data["channels"]:
+                    server_data["channels"][channel_id] = {"name": channel_id}
+                author_id = str(msg.get("author_id"))
+                if author_id and author_id not in server_data["members"]:
+                    server_data["members"][author_id] = {"name": author_id, "original_name": author_id, "roles": [], "top_role_color": "#99aab5"}
+        if not all_messages:
+            logging.warning("Aucun message trouvé pour ce serveur dans Firestore.")
+            return
+        df = pd.DataFrame(all_messages)
+        processed_df = prepare_dataframe(df, server_data)
+        app = create_app(processed_df, server_data, MUDAE_CHANNELS)
+        logging.info("Launching Dash web server on http://localhost:8050/")
+        app.run(host="0.0.0.0", port=8050, debug=False)
+        return
 
+    # Mode 2 : Scraper uniquement un channel
+    if args.scrape_channel:
+        channel_id = int(args.scrape_channel)
+        dashboard_df, server_data = await run_bot(
+            DISCORD_TOKEN,
+            DATA_DIR,
+            CACHE_FILENAME,
+            SERVER_DATA_FILENAME,
+            args.server,
+            [channel_id],
+            EXCLUDED_CHANNEL_IDS,
+        )
+        logging.info(f"Scraping du channel {channel_id} terminé.")
+        return
+
+    # Mode 3 : Scraper tout le serveur
+    if args.scrape_server or args.all:
+        dashboard_df, server_data = await run_bot(
+            DISCORD_TOKEN,
+            DATA_DIR,
+            CACHE_FILENAME,
+            SERVER_DATA_FILENAME,
+            args.server,
+            None,
+            EXCLUDED_CHANNEL_IDS,
+        )
+        logging.info("Scraping du serveur terminé.")
+        if not (args.web or args.all):
+            return
+        # Si --web ou --all, on continue pour lancer le dashboard
+        if dashboard_df.empty:
+            logging.warning("No data was collected. Program will exit.")
+            return
+        processed_df = prepare_dataframe(dashboard_df, server_data)
+        if processed_df.empty:
+            logging.warning("No data remaining after filtering. Dashboard cannot be launched.")
+            return
+        process_and_save_stats(processed_df, os.path.join(DATA_DIR, STATS_FILENAME))
+        app = create_app(processed_df, server_data, MUDAE_CHANNELS)
+        logging.info("Launching Dash web server on http://localhost:8050/")
+        app.run(host="0.0.0.0", port=8050, debug=False)
+        return
+
+    # Mode 4 : Lancer toute l'application (scrape serveur + web)
+    if args.all:
+        # Déjà géré ci-dessus
+        return
+
+    # Par défaut, comportement original (scrape serveur + web)
     dashboard_df, server_data = await run_bot(
         DISCORD_TOKEN,
         DATA_DIR,
         CACHE_FILENAME,
         SERVER_DATA_FILENAME,
-        server_name,
-        channel_ids,
+        args.server,
+        None,
         EXCLUDED_CHANNEL_IDS,
     )
-
     if dashboard_df.empty:
         logging.warning("No data was collected. Program will exit.")
         return
-
     processed_df = prepare_dataframe(dashboard_df, server_data)
     if processed_df.empty:
         logging.warning("No data remaining after filtering. Dashboard cannot be launched.")
         return
-
     process_and_save_stats(processed_df, os.path.join(DATA_DIR, STATS_FILENAME))
-
     app = create_app(processed_df, server_data, MUDAE_CHANNELS)
     logging.info("Launching Dash web server on http://localhost:8050/")
     app.run(host="0.0.0.0", port=8050, debug=False)

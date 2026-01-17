@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
 
+
 import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import dcc, html
+from corus.botus import timestamp_to_paris_datetime
 
 from .callbackus import CONTENT_STYLE_FULL, HEADER_STYLE_FULL, SIDEBAR_HIDDEN
 
@@ -12,8 +14,30 @@ def create_layout(df: pd.DataFrame) -> html.Div:
         min_date = datetime.now().date()
         max_date = datetime.now().date()
     else:
-        min_date = df["timestamp"].min().date()
-        max_date = df["timestamp"].max().date()
+        # Conversion des timestamps en datetime Paris pour l'affichage
+        def safe_to_unix(ts):
+            import pandas as pd
+            import numpy as np
+            if pd.isna(ts):
+                return None
+            if isinstance(ts, (float, int)):
+                return ts
+            if hasattr(ts, 'timestamp'):
+                # pandas.Timestamp, datetime.datetime, etc.
+                return ts.timestamp()
+            return None
+
+        if "timestamp" in df.columns:
+            df["timestamp_paris"] = df["timestamp"].apply(lambda ts: timestamp_to_paris_datetime(safe_to_unix(ts)) if pd.notna(ts) else None)
+            min_date = df["timestamp_paris"].min().date()
+            max_date = df["timestamp_paris"].max().date()
+        elif "created_at" in df.columns:
+            df["created_at_paris"] = df["created_at"].apply(lambda ts: timestamp_to_paris_datetime(safe_to_unix(ts)) if pd.notna(ts) else None)
+            min_date = df["created_at_paris"].min().date()
+            max_date = df["created_at_paris"].max().date()
+        else:
+            min_date = datetime.now().date()
+            max_date = datetime.now().date()
 
     sidebar = html.Div(
         [
@@ -401,6 +425,35 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                             style={"width": "200px", "marginBottom": "1rem"},
                                         ),
                                         dcc.Loading(html.Div(id="mentioned-users-container")),
+                                    ],
+                                    style={
+                                        "background": "white",
+                                        "border": "1px solid #e0e0e0",
+                                        "borderRadius": "8px",
+                                        "padding": "1.5rem",
+                                    },
+                                ),
+                                md=6,
+                            ),
+                            dbc.Col(
+                                html.Div(
+                                    [
+                                        html.H4("Most Replied To Users", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
+                                        html.Div(
+                                            [
+                                                dcc.Slider(
+                                                    id="replied-users-view-slider",
+                                                    min=0,
+                                                    max=1,
+                                                    step=1,
+                                                    value=0,
+                                                    marks={0: "Graph", 1: "Table"},
+                                                    className="mb-3",
+                                                ),
+                                            ],
+                                            style={"width": "200px", "marginBottom": "1rem"},
+                                        ),
+                                        dcc.Loading(html.Div(id="replied-users-container")),
                                     ],
                                     style={
                                         "background": "white",

@@ -1,14 +1,16 @@
+
 import asyncio
 import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 import discord
 import pandas as pd
 
 from dataus.constant import DATA_DIR, ID_NAME_MAP, SERVER_DATA_FILENAME
+from corus.firestorus import FirestoreClient
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -22,25 +24,72 @@ client = discord.Client(intents=intents)
 bot_data_future = None
 
 
-def create_message_data(message: discord.Message) -> dict:
+async def create_message_data(message: discord.Message, server_id: int) -> dict:
+    reactions_list = []
+    all_user_ids = set()
+    for reaction in message.reactions:
+        try:
+            users = [user async for user in reaction.users()]
+            user_ids = [user.id for user in users]
+            all_user_ids.update(user_ids)
+            reactions_list.append({
+                "emoji": str(reaction.emoji),
+                "count": reaction.count,
+                "user_ids": user_ids
+            })
+        except Exception:
+            reactions_list.append({
+                "emoji": str(reaction.emoji),
+                "count": reaction.count,
+                "user_ids": []
+            })
+    reactions_list.sort(key=lambda r: r["count"], reverse=True)
+    # Stockage en timestamp UTC (float)
+    created_at_ts = message.created_at.replace(tzinfo=timezone.utc).timestamp() if message.created_at else None
+    edited_at_ts = message.edited_at.replace(tzinfo=timezone.utc).timestamp() if message.edited_at else None
+    # Gestion du reply (réponse à un autre message)
+    reply_to_message_id = None
+    reply_to_user_id = None
+    if message.reference is not None:
+        reply_to_message_id = message.reference.message_id
+        # Si le message d'origine est chargé, on peut avoir l'auteur
+        resolved = getattr(message.reference, "resolved", None)
+        if resolved is not None and hasattr(resolved, "author") and getattr(resolved, "author", None) is not None:
+            reply_to_user_id = resolved.author.id
+        else:
+            reply_to_user_id = None
+        # Si c'est un reply, il faut absolument un reply_to_user_id (sinon on ne stocke pas le reply)
+        if reply_to_message_id is not None and reply_to_user_id is None:
+            reply_to_message_id = None
+
+
     return {
+        "server_id": server_id,
+        "channel_id": message.channel.id,
         "message_id": message.id,
         "author_id": message.author.id,
-        "author_discord_name": message.author.name,
-        "channel_id": message.channel.id,
         "content": message.content,
         "len_content": get_len_content(message.content),
-        "created_at": message.created_at,
-        "edited_at": message.edited_at,
+        "created_at": created_at_ts,
+        "edited_at": edited_at_ts,
+        "mentions": list({m.id for m in message.mentions}),
+        "mentioned_role_ids": [r.id for r in message.role_mentions],
         "attachments": len(message.attachments),
         "embeds": len(message.embeds),
-        "mentions": [m.id for m in message.mentions],
-        "mentioned_role_ids": [r.id for r in message.role_mentions],
-        "top_reaction_emoji": str(message.reactions[0].emoji) if message.reactions else None,
-        "top_reaction_count": int(message.reactions[0].count) if message.reactions else 0,
+        "reactions": reactions_list,
+        "reacted_user_ids": list(all_user_ids),
+        "reply_to_message_id": reply_to_message_id,
+        "reply_to_user_id": reply_to_user_id,
         "pinned": message.pinned,
         "jump_url": message.jump_url,
     }
+
+# Utilitaire pour convertir un timestamp UTC en datetime Paris (avec gestion été/hiver)
+def timestamp_to_paris_datetime(ts):
+    import pytz
+    utc_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    paris = pytz.timezone('Europe/Paris')
+    return utc_dt.astimezone(paris)
 
 
 def get_len_content(content_str: str) -> int:
@@ -71,35 +120,70 @@ def get_len_content(content_str: str) -> int:
 async def fetch_channel_messages_as_df(
     channel: discord.TextChannel, cache_df: pd.DataFrame
 ) -> pd.DataFrame:
+
+    # 1. Cherche le dernier timestamp dans Firestore pour ce channel
+    from corus.firestorus import FirestoreClient
+    firestore = FirestoreClient.get_instance()
+    collection_name = os.getenv("FIRESTORE_COLLECTION", "messages")
+    # On suppose que le server_id est accessible (sinon à passer en paramètre)
+    server_id = str(getattr(channel.guild, 'id', 443091773602922497))
+    channel_id = str(channel.id)
+    last_ts = firestore.get_last_message_timestamp(collection_name, server_id, channel_id)
+
     after_date = None
-    if cache_df is not None and not cache_df.empty:
+    if last_ts is not None:
+        after_date = datetime.fromtimestamp(float(last_ts), tz=timezone.utc)
+    elif cache_df is not None and not cache_df.empty:
         channel_messages = cache_df[cache_df["channel_id"] == channel.id]
         if not channel_messages.empty:
             after_date = pd.to_datetime(channel_messages["created_at"].max())
 
     after_str = (
-        f"after {after_date.strftime('%Y-%m-%d')}" if after_date else "from beginning"
+        f"after {after_date.strftime('%Y-%m-%d %H:%M:%S')}" if after_date else "from beginning"
     )
 
     messages_data = []
     start_time = datetime.now()
     progress_counter = 0
 
-    try:
-        async for message in channel.history(
-            limit=None, after=after_date, oldest_first=True
-        ):
-            if message.author.bot:
-                continue
+    import time
+    max_retries = 5
+    retry_delay = 30  # secondes
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            from corus.firestorus import FirestoreClient
+            firestore = FirestoreClient.get_instance()
+            collection_name = os.getenv("FIRESTORE_COLLECTION", "messages")
+            server_id = 443091773602922497
+            async for message in channel.history(
+                limit=None, after=after_date, oldest_first=True
+            ):
+                if message.author.bot:
+                    continue
+                msg_data = await create_message_data(message, server_id)
+                messages_data.append(msg_data)
+                if client.excluded_channel_ids is not None and message.channel.id in client.excluded_channel_ids:
+                    continue
+                progress_counter += 1
+                if progress_counter % 10000 == 0:
+                    logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name}...")
 
-            messages_data.append(create_message_data(message))
-            if client.excluded_channel_ids is not None and message.channel.id in client.excluded_channel_ids:
-                continue
-            progress_counter += 1
-            if progress_counter % 10000 == 0:
-                logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name}...")
+            # Ajout de tous les messages du channel dans Firestore à la fin
+            if messages_data:
+                firestore.insert_messages(collection_name, messages_data)
 
-        main_msg_count = len(messages_data)
+            main_msg_count = len(messages_data)
+            break  # Succès, on sort de la boucle
+        except Exception as e:
+            # Gestion du DiscordServerError 503
+            if hasattr(e, 'status') and getattr(e, 'status', None) == 503:
+                attempt += 1
+                logging.error(f"Discord 503 Service Unavailable sur #{channel.name}, tentative {attempt}/{max_retries}. Attente {retry_delay}s...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                raise
 
         threads_fetched = 0
         try:
@@ -115,7 +199,8 @@ async def fetch_channel_messages_as_df(
                     if progress_counter % 10000 == 0:
                         logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name} (threads)...")
                     
-                    messages_data.append(create_message_data(message))
+                    msg_data = await create_message_data(message, server_id)
+                    messages_data.append(msg_data)
 
             async for thread in channel.archived_threads(limit=None):
                 async for message in thread.history(
@@ -128,7 +213,8 @@ async def fetch_channel_messages_as_df(
                     if progress_counter % 10000 == 0:
                         logging.info(f"  Progress: {progress_counter} messages fetched from #{channel.name} (archived threads)...")
                     
-                    messages_data.append(create_message_data(message))
+                    msg_data = await create_message_data(message, server_id)
+                    messages_data.append(msg_data)
         except Exception as e:
             logging.warning(f"Error fetching threads for #{channel.name}: {e}")
 
@@ -158,14 +244,18 @@ async def run_bot_logic(
     excluded_channel_ids: list = None,
 ) -> None:
     if server_name:
-        guild = discord.utils.get(client.guilds, name=server_name)
+        # Si le paramètre est un ID (tout chiffre), cherche par id, sinon par nom
+        if str(server_name).isdigit():
+            guild = discord.utils.get(client.guilds, id=int(server_name))
+        else:
+            guild = discord.utils.get(client.guilds, name=server_name)
     else:
         guild = discord.utils.get(client.guilds, name="Virgule du 4'")
 
     if guild is None:
         logging.error(f"Server '{server_name}' not found. Available servers:")
         for g in client.guilds:
-            logging.error(f"- {g.name}")
+            logging.error(f"- {g.name} (ID: {g.id})")
         await client.close()
         return
 
@@ -198,12 +288,12 @@ async def run_bot_logic(
                 str(member.color) if str(member.color) != "#000000" else "#99aab5"
             ),
         }
-        server_data["members"] = dict(
-            sorted(
-                server_data["members"].items(),
-                key=lambda item: item[1]["original_name"].lower(),
-            )
+    server_data["members"] = dict(
+        sorted(
+            server_data["members"].items(),
+            key=lambda item: item[1]["original_name"].lower(),
         )
+    )
 
     os.makedirs(data_dir, exist_ok=True)
     server_data_path = os.path.join(data_dir, server_data_file)
@@ -213,17 +303,8 @@ async def run_bot_logic(
     except IOError as e:
         logging.error(f"Error writing server data file: {e}")
 
-    cache_path = os.path.join(data_dir, cache_file)
+    # Suppression de la logique de cache parquet
     cache_df = None
-    if os.path.exists(cache_path):
-        try:
-            cache_df = pd.read_parquet(cache_path)
-            cache_df["created_at"] = pd.to_datetime(cache_df["created_at"])
-        except Exception as e:
-            logging.error(f"Error loading cache: {e}.")
-            cache_df = None
-    else:
-        logging.info("No cache file found.")
 
     text_channels = [
         c
@@ -237,29 +318,13 @@ async def run_bot_logic(
         logging.info(f"Filtered to {len(text_channels)} channels")
 
     logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
-    
-    if cache_df is None:
-        cache_df = pd.DataFrame()
 
     for i, channel in enumerate(text_channels, 1):
         try:
             df = await fetch_channel_messages_as_df(channel, cache_df)
             if not df.empty:
                 logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
-                if cache_df.empty:
-                    logging.info(f"Added {len(df)} messages from #{channel.name}")
-                else:
-                    initial_count = len(cache_df)
-                    cache_df = pd.concat([cache_df, df], ignore_index=True).drop_duplicates(
-                        subset=["message_id"], keep="last"
-                    )
-                    new_count = len(cache_df) - initial_count
-                    logging.info(f"Added {new_count} new messages from #{channel.name}")
-                
-                try:
-                    cache_df.to_parquet(cache_path, index=False)
-                except Exception as e:
-                    logging.error(f"Error saving parquet file: {e}")
+                logging.info(f"Added {len(df)} messages from #{channel.name}")
         except Exception as e:
             logging.exception(f"Error fetching #{channel.name}")
 
@@ -269,6 +334,10 @@ async def run_bot_logic(
     global bot_data_future
     if bot_data_future:
         bot_data_future.set_result((final_df, server_data))
+
+    # Fermeture explicite de la connexion Firestore si elle existe
+    if hasattr(FirestoreClient, '_instance') and FirestoreClient._instance:
+        FirestoreClient._instance.close()
 
 
 @client.event

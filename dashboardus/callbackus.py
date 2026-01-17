@@ -14,6 +14,103 @@ from dash.dependencies import Input, Output, State
 from dataus.constant import EXCLUDED_CHANNEL_IDS, MIN_MESSAGE_COUNT
 
 
+def create_most_replied_graph(
+    dff: pd.DataFrame,
+    color_map: dict,
+    user_id_to_name_map: dict,
+    name_to_user_id_map: dict,
+    user_id_to_color_map: dict,
+) -> go.Figure:
+    if dff.empty or "reply_to_user_id" not in dff.columns:
+        return go.Figure(
+            layout={
+                "template": "plotly_white",
+                "annotations": [{"text": "No Data", "showarrow": False}],
+            }
+        )
+
+    reply_counts = {}
+    reply_user_ids = dff["reply_to_user_id"].dropna().astype(str)
+    if not reply_user_ids.empty:
+        reply_id_counts = reply_user_ids.value_counts()
+        for user_id, count in reply_id_counts.items():
+            reply_counts[user_id] = reply_counts.get(user_id, 0) + count
+
+    if not reply_counts:
+        return go.Figure(
+            layout={
+                "template": "plotly_white",
+                "annotations": [{"text": "No replies found", "showarrow": False}],
+            }
+        )
+
+    replies_df = pd.DataFrame(list(reply_counts.items()), columns=["id", "count"])
+    replies_df["name"] = replies_df["id"].apply(lambda uid: user_id_to_name_map.get(int(uid), f"ID: {uid}"))
+    replies_df = replies_df.dropna(subset=["name"])
+
+    if replies_df.empty:
+        return go.Figure(
+            layout={
+                "template": "plotly_white",
+                "xaxis": {"visible": False},
+                "yaxis": {"visible": False},
+                "annotations": [
+                    {
+                        "text": "No replies for known users",
+                        "showarrow": False,
+                        "xref": "paper",
+                        "yref": "paper",
+                        "x": 0.5,
+                        "y": 0.5,
+                        "font": {"size": 16},
+                    }
+                ],
+            }
+        )
+
+    replies_final = (
+        replies_df.groupby("name")["count"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(15)
+    )
+
+    colors = [user_id_to_color_map.get(str(name_to_user_id_map.get(name, "")), "#6c757d") for name in replies_final.index]
+
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                y=replies_final.index,
+                x=replies_final.values,
+                orientation="h",
+                marker=dict(color=colors),
+            )
+        ]
+    )
+    fig.update_layout(
+        xaxis_title="Number of Replies Received",
+        yaxis_title=None,
+        yaxis={"categoryorder": "total ascending"},
+        template="plotly_white",
+        margin=dict(l=150),
+    )
+    return fig
+import calendar
+import json
+from datetime import datetime, timedelta
+from typing import Optional
+
+import dash
+import dash_bootstrap_components as dbc
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+
+from dataus.constant import EXCLUDED_CHANNEL_IDS, MIN_MESSAGE_COUNT
+
+
 def create_table_from_figure(fig: go.Figure) -> html.Div:
     if not fig or not fig.data:
         return html.P("No data available", className="text-muted")
@@ -279,6 +376,7 @@ def register_callbacks(
         Output("monthly-leaderboard-msg", "children"),
         Output("daily-leaderboard-msg-container", "children"),
         Output("mentioned-users-container", "children"),
+        Output("replied-users-container", "children"),
         Output("top-reacted-messages", "children"),
         Input("user-dropdown", "value"),
         Input("date-picker-range", "start_date"),
@@ -295,6 +393,7 @@ def register_callbacks(
         Input("distribution-view-slider", "value"),
         Input("median-length-view-slider", "value"),
         Input("mentioned-users-view-slider", "value"),
+        Input("replied-users-view-slider", "value"),
         Input("length-aggregation-dropdown", "value"),
         Input("length-chart-type-dropdown", "value"),
         State("date-picker-range", "min_date_allowed"),
@@ -316,6 +415,7 @@ def register_callbacks(
         distribution_view_slider: int,
         median_length_view_slider: int,
         mentioned_users_view_slider: int,
+        replied_users_view_slider: int,
         length_aggregation: str,
         length_chart_type: str,
         min_date_allowed: str,
@@ -580,6 +680,8 @@ def register_callbacks(
                 empty_leaderboard,
                 empty_leaderboard,
                 empty_figure,
+                empty_figure,
+                empty_figure,
                 empty_list_component,
             )
 
@@ -609,6 +711,13 @@ def register_callbacks(
             name_to_user_id_map,
             user_id_to_color_map,
         )
+        fig_replied = create_most_replied_graph(
+            dff,
+            color_map,
+            user_id_to_name_map,
+            name_to_user_id_map,
+            user_id_to_color_map,
+        )
         top_reactions_component = create_top_reactions_list(
             dff, user_id_to_color_map, current_member_ids_int
         )
@@ -625,6 +734,7 @@ def register_callbacks(
         distribution_content = render_view(fig_distribution, distribution_view_slider, True)
         median_length_content = render_view(fig_median_length, median_length_view_slider, True)
         mentioned_users_content = render_view(fig_mentioned, mentioned_users_view_slider, True)
+        replied_users_content = render_view(fig_replied, replied_users_view_slider, True)
 
         return (
             evolution_content,
@@ -642,6 +752,7 @@ def register_callbacks(
             monthly_leaderboard,
             daily_leaderboard,
             mentioned_users_content,
+            replied_users_content,
             top_reactions_component,
         )
 
