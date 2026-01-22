@@ -1,7 +1,10 @@
-DATA_DIR = "dataus"
+import os
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DATA_DIR = os.path.join(PROJECT_ROOT, "dataus")
 CACHE_FILENAME = "discord_messages_cache.parquet"
 SERVER_DATA_FILENAME = "server_data.json"
-STATS_FILENAME = "discord_server_stats.csv"
+STATS_FILENAME = "leaderboard.csv"
 MIN_MESSAGE_COUNT = 100
 
 EXCLUDED_CHANNEL_IDS = [
@@ -20,7 +23,6 @@ MUDAE_CHANNELS = [
 IDS_TO_EXCLUDE = [456226577798135808]
 
 SMURF_IDS = []
-
 
 ID_NAME_MAP = {
     "157131660788367360": "Adrien",

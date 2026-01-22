@@ -147,6 +147,9 @@ async def fetch_channel_messages_as_df(
     max_retries = 5
     retry_delay = 30
     attempt = 0
+    server_dir = os.path.join(DATA_DIR, str(server_id))
+    os.makedirs(server_dir, exist_ok=True)
+    parquet_path = os.path.join(server_dir, "messages.parquet")
     while attempt < max_retries:
         try:
             async for message in channel.history(
@@ -162,11 +165,34 @@ async def fetch_channel_messages_as_df(
                 ):
                     continue
                 progress_counter += 1
+                if progress_counter % 100000 == 0:
+                    # Sauvegarde incrémentale tous les 100000 messages
+                    df_temp = pd.DataFrame(messages_data)
+                    if os.path.exists(parquet_path):
+                        df_old = pd.read_parquet(parquet_path)
+                        df_concat = pd.concat([df_old, df_temp], ignore_index=True)
+                    else:
+                        df_concat = df_temp
+                    df_concat.to_parquet(parquet_path, index=False)
+                    logging.info(
+                        f"Parquet incrémental sauvegardé ({progress_counter} messages) : {parquet_path}"
+                    )
+                    messages_data = []
                 if progress_counter % 10000 == 0:
                     logging.info(
                         f"  Progress: {progress_counter} messages fetched from #{channel.name}..."
                     )
-            main_msg_count = len(messages_data)
+            # Sauvegarde finale à la fin du channel
+            if messages_data:
+                df_temp = pd.DataFrame(messages_data)
+                if os.path.exists(parquet_path):
+                    df_old = pd.read_parquet(parquet_path)
+                    df_concat = pd.concat([df_old, df_temp], ignore_index=True)
+                else:
+                    df_concat = df_temp
+                df_concat.to_parquet(parquet_path, index=False)
+                logging.info(f"Parquet sauvegardé (fin channel) : {parquet_path}")
+            main_msg_count = progress_counter
             break
         except Exception as e:
             if hasattr(e, "status") and getattr(e, "status", None) == 503:
@@ -286,40 +312,71 @@ async def run_bot_logic(
         )
     )
 
-    os.makedirs(data_dir, exist_ok=True)
-    server_data_path = os.path.join(data_dir, server_data_file)
+    # Création du dossier dataus/<server_id>
+    server_id = str(guild.id)
+    server_dir = os.path.join(data_dir, server_id)
+    os.makedirs(server_dir, exist_ok=True)
+
+    # Sauvegarde séparée des membres, channels, rôles
     try:
-        with open(server_data_path, "w", encoding="utf-8") as f:
-            json.dump(server_data, f, ensure_ascii=False, indent=2)
-    except IOError as e:
-        logging.error(f"Error writing server data file: {e}")
+        with open(os.path.join(server_dir, "members.json"), "w", encoding="utf-8") as f:
+            json.dump(server_data["members"], f, ensure_ascii=False, indent=2)
+        with open(
+            os.path.join(server_dir, "channels.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump(server_data["channels"], f, ensure_ascii=False, indent=2)
+        with open(os.path.join(server_dir, "roles.json"), "w", encoding="utf-8") as f:
+            json.dump(server_data["roles"], f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logging.error(f"Error writing members/channels/roles JSON: {e}")
 
-    # Suppression de la logique de cache parquet
-    cache_df = None
-
+    # Récupération des messages (DataFrame)
+    all_messages = []
     text_channels = [
         c
         for c in guild.text_channels
         if c.permissions_for(guild.me).read_message_history
         and (excluded_channel_ids is None or c.id not in excluded_channel_ids)
     ]
-
     if channel_ids:
         text_channels = [c for c in text_channels if c.id in channel_ids]
         logging.info(f"Filtered to {len(text_channels)} channels")
-
     logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
-
     for i, channel in enumerate(text_channels, 1):
         try:
-            df = await fetch_channel_messages_as_df(channel, cache_df)
+            df = await fetch_channel_messages_as_df(channel, None)
             if not df.empty:
+                all_messages.append(df)
                 logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
                 logging.info(f"Added {len(df)} messages from #{channel.name}")
         except Exception as e:
             logging.exception(f"Error fetching #{channel.name}")
 
-    final_df = cache_df
+    if all_messages:
+        final_df = pd.concat(all_messages, ignore_index=True)
+    else:
+        final_df = pd.DataFrame()
+
+    # Sauvegarde Parquet
+    parquet_path = os.path.join(server_dir, "messages.parquet")
+    try:
+        final_df.to_parquet(parquet_path, index=False)
+        logging.info(f"Parquet sauvegardé : {parquet_path}")
+    except Exception as e:
+        logging.error(f"Erreur lors de la sauvegarde du Parquet : {e}")
+
+    # Sauvegarde stats CSV (optionnel, à adapter selon besoin)
+    try:
+        stats_path = os.path.join(server_dir, "stats.csv")
+        if not final_df.empty:
+            # Extrait rapide : nombre de messages par user
+            stats = (
+                final_df.groupby("author_id").size().reset_index(name="message_count")
+            )
+            stats.to_csv(stats_path, index=False)
+            logging.info(f"Stats sauvegardées : {stats_path}")
+    except Exception as e:
+        logging.error(f"Erreur lors de la sauvegarde des stats : {e}")
 
     await client.close()
     global bot_data_future
