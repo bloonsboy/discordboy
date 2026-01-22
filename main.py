@@ -67,12 +67,12 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     df_copy = df.copy()
 
     author_map = {int(k): v["name"] for k, v in server_data.get("members", {}).items()}
-    
+
     for id_str, name in ID_NAME_MAP.items():
         author_id = int(id_str)
         if author_id not in author_map:
             author_map[author_id] = name
-    
+
     channel_map = {
         int(k): v["name"] for k, v in server_data.get("channels", {}).items()
     }
@@ -82,8 +82,7 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
 
     mask_unknown = df_copy["author_name"].isna()
     df_copy.loc[mask_unknown, "author_name"] = df_copy.loc[mask_unknown].apply(
-        lambda row: f"Ex-membre ({row['author_id']})",
-        axis=1
+        lambda row: f"Ex-membre ({row['author_id']})", axis=1
     )
     df_copy["created_at"] = pd.to_datetime(df_copy["created_at"], utc=True)
 
@@ -97,7 +96,9 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
 
     numeric_cols = ["len_content", "total_reaction_count", "attachments", "embeds"]
     for col in numeric_cols:
-        df_copy[col] = df_copy.get(col, 0).fillna(0).astype(int) if col in df_copy.columns else 0
+        df_copy[col] = (
+            df_copy.get(col, 0).fillna(0).astype(int) if col in df_copy.columns else 0
+        )
 
     list_cols = ["mentions", "mentioned_role_ids", "reactions"]
     for col in list_cols:
@@ -109,15 +110,15 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
                     return []
                 # Handle numpy arrays and pandas scalars
                 try:
-                    if hasattr(x, 'size') and x.size == 0:
+                    if hasattr(x, "size") and x.size == 0:
                         return []
                     # Check for pandas NA/None values more carefully
-                    if pd.isna(x).any() if hasattr(pd.isna(x), 'any') else pd.isna(x):
+                    if pd.isna(x).any() if hasattr(pd.isna(x), "any") else pd.isna(x):
                         return []
                 except (ValueError, TypeError):
                     # If pd.isna fails, continue to other checks
                     pass
-                
+
                 if isinstance(x, str):
                     try:
                         return json.loads(x)
@@ -130,7 +131,7 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
                     return list(x)
                 except (TypeError, ValueError):
                     return []
-            
+
             df_copy[col] = df_copy[col].apply(parse_list_col)
         else:
             df_copy[col] = [[] for _ in range(len(df_copy))]
@@ -148,15 +149,33 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
     return df_copy
 
 
-
 async def main():
     parser = argparse.ArgumentParser(description="Discord Activity Dashboard")
-    parser.add_argument("--web-only", action="store_true", help="Lancer uniquement le serveur web")
-    parser.add_argument("--scrape-channel", type=str, default=None, help="ID du channel à scraper (ex: --scrape-channel 123456789)")
-    parser.add_argument("--scrape-server", action="store_true", help="Lancer le scraping du serveur entier")
-    parser.add_argument("--web", action="store_true", help="Lancer le serveur web après scraping")
-    parser.add_argument("--all", action="store_true", help="Lancer scraping serveur + web (équivalent à --scrape-server --web)")
-    parser.add_argument("--server", type=str, default=None, help="Nom du serveur Discord à scraper")
+    parser.add_argument(
+        "--web-only", action="store_true", help="Lancer uniquement le serveur web"
+    )
+    parser.add_argument(
+        "--scrape-channel",
+        type=str,
+        default=None,
+        help="ID du channel à scraper (ex: --scrape-channel 123456789)",
+    )
+    parser.add_argument(
+        "--scrape-server",
+        action="store_true",
+        help="Lancer le scraping du serveur entier",
+    )
+    parser.add_argument(
+        "--web", action="store_true", help="Lancer le serveur web après scraping"
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Lancer scraping serveur + web (équivalent à --scrape-server --web)",
+    )
+    parser.add_argument(
+        "--server", type=str, default=None, help="Nom du serveur Discord à scraper"
+    )
     args = parser.parse_args()
 
     if not DISCORD_TOKEN:
@@ -165,36 +184,21 @@ async def main():
 
     # Mode 1 : Lancer uniquement le serveur web
     if args.web_only:
-        # Récupération des messages depuis Firestore
-        from corus.firestorus import FirestoreClient
-        firestore = FirestoreClient.get_instance()
-        collection_name = os.getenv("FIRESTORE_COLLECTION", "messages")
-        server_id = args.server
-        if not server_id:
-            logging.error("Veuillez fournir --server pour identifier le serveur à afficher.")
+        # Récupération des messages depuis le cache local Parquet
+        parquet_path = os.path.join(DATA_DIR, "discord_server_stats.parquet")
+        if not os.path.exists(parquet_path):
+            logging.error(
+                f"Aucun fichier Parquet trouvé à {parquet_path}. Lancez d'abord le scraping."
+            )
             return
-        # Récupérer tous les messages du serveur
-        # On suppose que la structure est: collection_name/server_id/channel_id/message_id
-        server_ref = firestore.db.collection(collection_name).document(server_id)
-        channels = server_ref.collections()
-        all_messages = []
-        server_data = {"roles": {}, "channels": {}, "members": {}}
-        for channel in channels:
-            channel_id = channel.id
-            docs = channel.stream()
-            for doc in docs:
-                msg = doc.to_dict()
-                all_messages.append(msg)
-                # Collecte des infos pour server_data (channels, membres, etc.)
-                if channel_id not in server_data["channels"]:
-                    server_data["channels"][channel_id] = {"name": channel_id}
-                author_id = str(msg.get("author_id"))
-                if author_id and author_id not in server_data["members"]:
-                    server_data["members"][author_id] = {"name": author_id, "original_name": author_id, "roles": [], "top_role_color": "#99aab5"}
-        if not all_messages:
-            logging.warning("Aucun message trouvé pour ce serveur dans Firestore.")
-            return
-        df = pd.DataFrame(all_messages)
+        df = pd.read_parquet(parquet_path)
+        # Chargement des métadonnées serveur si disponibles
+        server_data_path = os.path.join(DATA_DIR, SERVER_DATA_FILENAME)
+        if os.path.exists(server_data_path):
+            with open(server_data_path, "r", encoding="utf-8") as f:
+                server_data = json.load(f)
+        else:
+            server_data = {"roles": {}, "channels": {}, "members": {}}
         processed_df = prepare_dataframe(df, server_data)
         app = create_app(processed_df, server_data, MUDAE_CHANNELS)
         logging.info("Launching Dash web server on http://localhost:8050/")
@@ -236,7 +240,9 @@ async def main():
             return
         processed_df = prepare_dataframe(dashboard_df, server_data)
         if processed_df.empty:
-            logging.warning("No data remaining after filtering. Dashboard cannot be launched.")
+            logging.warning(
+                "No data remaining after filtering. Dashboard cannot be launched."
+            )
             return
         process_and_save_stats(processed_df, os.path.join(DATA_DIR, STATS_FILENAME))
         app = create_app(processed_df, server_data, MUDAE_CHANNELS)
@@ -264,7 +270,9 @@ async def main():
         return
     processed_df = prepare_dataframe(dashboard_df, server_data)
     if processed_df.empty:
-        logging.warning("No data remaining after filtering. Dashboard cannot be launched.")
+        logging.warning(
+            "No data remaining after filtering. Dashboard cannot be launched."
+        )
         return
     process_and_save_stats(processed_df, os.path.join(DATA_DIR, STATS_FILENAME))
     app = create_app(processed_df, server_data, MUDAE_CHANNELS)
