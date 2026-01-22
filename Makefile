@@ -1,3 +1,6 @@
+# 5. Générer les stats Wordle pour un serveur
+wordle-stats:
+	$(PYTHON) corus/wordleus.py --server-id $(SERVER)
 # Makefile for Discordboy project
 
 .PHONY: web scrape-channel scrape-server all

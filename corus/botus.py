@@ -216,9 +216,7 @@ async def fetch_channel_messages_as_df(
             if hasattr(e, "status") and getattr(e, "status", None) == 503:
                 attempt += 1
                 logging.error(
-                    df_parquet = pd.read_parquet(parquet_path)
-                    # Protection anti-doublon
-                    ids_old = set(df_parquet["message_id"].astype(str))
+                    f"Discord 503 Service Unavailable sur #{channel.name}, tentative {attempt}/{max_retries}. Attente {retry_delay}s..."
                 )
                 import time
 
