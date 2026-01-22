@@ -85,6 +85,14 @@ def prepare_dataframe(df: pd.DataFrame, server_data: dict) -> pd.DataFrame:
         lambda row: f"Ex-membre ({row['author_id']})", axis=1
     )
     df_copy["created_at"] = pd.to_datetime(df_copy["created_at"], utc=True)
+    # Ajout d'une colonne date locale Europe/Paris pour affichage
+    try:
+        import pytz
+
+        paris = pytz.timezone("Europe/Paris")
+        df_copy["created_at_paris"] = df_copy["created_at"].dt.tz_convert(paris)
+    except Exception as e:
+        logging.warning(f"Conversion Europe/Paris impossible : {e}")
 
     EXCLUDE_LIST = list(IDS_TO_EXCLUDE) + list(SMURF_IDS)
     df_copy = df_copy[~df_copy["author_id"].isin(EXCLUDE_LIST)]

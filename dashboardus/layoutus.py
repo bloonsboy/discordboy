@@ -18,23 +18,22 @@ def create_layout(df: pd.DataFrame) -> html.Div:
         def safe_to_unix(ts):
             import pandas as pd
             import numpy as np
+
             if pd.isna(ts):
                 return None
             if isinstance(ts, (float, int)):
                 return ts
-            if hasattr(ts, 'timestamp'):
+            if hasattr(ts, "timestamp"):
                 # pandas.Timestamp, datetime.datetime, etc.
                 return ts.timestamp()
             return None
 
-        if "timestamp" in df.columns:
-            df["timestamp_paris"] = df["timestamp"].apply(lambda ts: timestamp_to_paris_datetime(safe_to_unix(ts)) if pd.notna(ts) else None)
-            min_date = df["timestamp_paris"].min().date()
-            max_date = df["timestamp_paris"].max().date()
-        elif "created_at" in df.columns:
-            df["created_at_paris"] = df["created_at"].apply(lambda ts: timestamp_to_paris_datetime(safe_to_unix(ts)) if pd.notna(ts) else None)
+        if "created_at_paris" in df.columns:
             min_date = df["created_at_paris"].min().date()
             max_date = df["created_at_paris"].max().date()
+        elif "created_at" in df.columns:
+            min_date = df["created_at"].min().date()
+            max_date = df["created_at"].max().date()
         else:
             min_date = datetime.now().date()
             max_date = datetime.now().date()
@@ -43,7 +42,9 @@ def create_layout(df: pd.DataFrame) -> html.Div:
         [
             html.Div(
                 [
-                    html.H2("Filters", className="h4 mb-3", style={"fontWeight": "300"}),
+                    html.H2(
+                        "Filters", className="h4 mb-3", style={"fontWeight": "300"}
+                    ),
                 ],
             ),
             html.Hr(style={"borderColor": "#e0e0e0"}),
@@ -51,7 +52,11 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                 [
                     dbc.AccordionItem(
                         [
-                            html.Label("Top Users", className="form-label", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Top Users",
+                                className="form-label",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dcc.Dropdown(
                                 id="top-n-dropdown",
                                 options=[
@@ -66,7 +71,11 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 style={"fontSize": "0.9rem"},
                             ),
                             html.Div(className="mb-3"),
-                            html.Label("Select Specific Users", className="form-label mt-3", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Select Specific Users",
+                                className="form-label mt-3",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dcc.Dropdown(
                                 id="user-dropdown",
                                 multi=True,
@@ -74,7 +83,11 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 style={"fontSize": "0.9rem"},
                             ),
                             html.Div(className="mb-3"),
-                            html.Label("Highlight User", className="form-label mt-3", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Highlight User",
+                                className="form-label mt-3",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dcc.Dropdown(
                                 id="highlight-user-dropdown",
                                 multi=False,
@@ -87,15 +100,25 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                     ),
                     dbc.AccordionItem(
                         [
-                            html.Label("Time Period", className="form-label", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Time Period",
+                                className="form-label",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dcc.Dropdown(
                                 id="date-range-dropdown",
                                 options=[
                                     {"label": "Custom", "value": "custom"},
                                     {"label": "Current Year", "value": "current_year"},
                                     {"label": "Last 365 Days", "value": "last_365"},
-                                    {"label": "Last 6 Months", "value": "last_6_months"},
-                                    {"label": "Last 3 Months", "value": "last_3_months"},
+                                    {
+                                        "label": "Last 6 Months",
+                                        "value": "last_6_months",
+                                    },
+                                    {
+                                        "label": "Last 3 Months",
+                                        "value": "last_3_months",
+                                    },
                                     {"label": "All-time", "value": "all-time"},
                                 ],
                                 value="all-time",
@@ -103,24 +126,37 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 style={"fontSize": "0.9rem"},
                             ),
                             html.Div(className="mb-3"),
-                            html.Label("Custom Date Range", className="form-label mt-3", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Custom Date Range",
+                                className="form-label mt-3",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dcc.DatePickerRange(
                                 id="date-picker-range",
                                 min_date_allowed=min_date,
                                 max_date_allowed=max_date,
-                                start_date=(datetime.now() - timedelta(days=365)).date(),
+                                start_date=(
+                                    datetime.now() - timedelta(days=365)
+                                ).date(),
                                 end_date=datetime.now().date(),
                                 display_format="DD/MM/YYYY",
                                 className="w-100",
                             ),
-                            html.Div(id="date-range-display", className="text-muted small mt-2"),
+                            html.Div(
+                                id="date-range-display",
+                                className="text-muted small mt-2",
+                            ),
                         ],
                         title="Time Period",
                         item_id="time",
                     ),
                     dbc.AccordionItem(
                         [
-                            html.Label("Role Filter", className="form-label", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Role Filter",
+                                className="form-label",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dbc.RadioItems(
                                 id="virgule-filter",
                                 options=[
@@ -131,7 +167,11 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 value="everyone",
                                 className="mb-3",
                             ),
-                            html.Label("Channel Options", className="form-label mt-3", style={"fontSize": "0.9rem", "color": "#666"}),
+                            html.Label(
+                                "Channel Options",
+                                className="form-label mt-3",
+                                style={"fontSize": "0.9rem", "color": "#666"},
+                            ),
                             dbc.Switch(
                                 id="mudae-filter-switch",
                                 label="Include Mudae Channels",
@@ -195,7 +235,6 @@ def create_layout(df: pd.DataFrame) -> html.Div:
             dcc.Store(id="aggregation-store", data="cumulative"),
             dcc.Markdown(id="dynamic-styles", style={"display": "none"}),
             html.Div(id="user-profile-card-container"),
-            
             # Temporal Analysis Section
             html.Div(
                 [
@@ -215,38 +254,83 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 [
                                     html.Div(
                                         [
-                                            html.Span("Showing ", style={"color": "#333", "fontSize": "1rem", "fontWeight": "500", "marginRight": "0.5rem"}),
+                                            html.Span(
+                                                "Showing ",
+                                                style={
+                                                    "color": "#333",
+                                                    "fontSize": "1rem",
+                                                    "fontWeight": "500",
+                                                    "marginRight": "0.5rem",
+                                                },
+                                            ),
                                             dcc.Dropdown(
                                                 id="metric-dropdown",
                                                 options=[
-                                                    {"label": "Messages", "value": "messages"},
-                                                    {"label": "Characters", "value": "characters"},
+                                                    {
+                                                        "label": "Messages",
+                                                        "value": "messages",
+                                                    },
+                                                    {
+                                                        "label": "Characters",
+                                                        "value": "characters",
+                                                    },
                                                 ],
                                                 value="messages",
                                                 clearable=False,
-                                                style={"width": "150px", "display": "inline-block"},
+                                                style={
+                                                    "width": "150px",
+                                                    "display": "inline-block",
+                                                },
                                             ),
                                         ],
-                                        style={"display": "inline-flex", "alignItems": "center", "marginRight": "1rem"},
+                                        style={
+                                            "display": "inline-flex",
+                                            "alignItems": "center",
+                                            "marginRight": "1rem",
+                                        },
                                     ),
                                     html.Div(
                                         [
-                                            html.Span(" by ", style={"color": "#333", "fontSize": "1rem", "fontWeight": "500", "marginRight": "0.5rem"}),
+                                            html.Span(
+                                                " by ",
+                                                style={
+                                                    "color": "#333",
+                                                    "fontSize": "1rem",
+                                                    "fontWeight": "500",
+                                                    "marginRight": "0.5rem",
+                                                },
+                                            ),
                                             dcc.Dropdown(
                                                 id="aggregation-dropdown",
                                                 options=[
-                                                    {"label": "Cumulative", "value": "cumulative"},
-                                                    {"label": "Monthly", "value": "monthly"},
+                                                    {
+                                                        "label": "Cumulative",
+                                                        "value": "cumulative",
+                                                    },
+                                                    {
+                                                        "label": "Monthly",
+                                                        "value": "monthly",
+                                                    },
                                                 ],
                                                 value="cumulative",
                                                 clearable=False,
-                                                style={"width": "150px", "display": "inline-block"},
+                                                style={
+                                                    "width": "150px",
+                                                    "display": "inline-block",
+                                                },
                                             ),
                                         ],
-                                        style={"display": "inline-flex", "alignItems": "center"},
+                                        style={
+                                            "display": "inline-flex",
+                                            "alignItems": "center",
+                                        },
                                     ),
                                 ],
-                                style={"display": "flex", "alignItems": "center", "marginBottom": "1.5rem"},
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "marginBottom": "1.5rem",
+                                },
                             ),
                         ],
                     ),
@@ -282,7 +366,6 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                     ),
                 ],
             ),
-            
             # Message & Interaction Analysis
             html.Div(
                 [
@@ -301,21 +384,45 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                 [
                                     html.Div(
                                         [
-                                            html.Span("Time granularity: ", style={"color": "#333", "fontSize": "1rem", "fontWeight": "500", "marginRight": "0.5rem"}),
+                                            html.Span(
+                                                "Time granularity: ",
+                                                style={
+                                                    "color": "#333",
+                                                    "fontSize": "1rem",
+                                                    "fontWeight": "500",
+                                                    "marginRight": "0.5rem",
+                                                },
+                                            ),
                                             dcc.Dropdown(
                                                 id="distribution-time-unit",
                                                 options=[
-                                                    {"label": "Hour of Day", "value": "hour"},
-                                                    {"label": "Day of Week", "value": "day"},
-                                                    {"label": "Month", "value": "month"},
+                                                    {
+                                                        "label": "Hour of Day",
+                                                        "value": "hour",
+                                                    },
+                                                    {
+                                                        "label": "Day of Week",
+                                                        "value": "day",
+                                                    },
+                                                    {
+                                                        "label": "Month",
+                                                        "value": "month",
+                                                    },
                                                     {"label": "Year", "value": "year"},
                                                 ],
                                                 value="hour",
                                                 clearable=False,
-                                                style={"width": "180px", "display": "inline-block"},
+                                                style={
+                                                    "width": "180px",
+                                                    "display": "inline-block",
+                                                },
                                             ),
                                         ],
-                                        style={"display": "inline-flex", "alignItems": "center", "marginBottom": "1rem"},
+                                        style={
+                                            "display": "inline-flex",
+                                            "alignItems": "center",
+                                            "marginBottom": "1rem",
+                                        },
                                     ),
                                     html.Div(
                                         [
@@ -329,7 +436,10 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                                 className="mb-3",
                                             ),
                                         ],
-                                        style={"width": "200px", "marginBottom": "1rem"},
+                                        style={
+                                            "width": "200px",
+                                            "marginBottom": "1rem",
+                                        },
                                     ),
                                 ],
                             ),
@@ -347,41 +457,86 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                             "marginBottom": "2rem",
                         },
                     ),
-                    
                     dbc.Row(
                         [
                             dbc.Col(
                                 html.Div(
                                     [
-                                        html.H4("Message Length", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
+                                        html.H4(
+                                            "Message Length",
+                                            style={
+                                                "fontWeight": "300",
+                                                "fontSize": "1.1rem",
+                                                "marginBottom": "1rem",
+                                            },
+                                        ),
                                         html.Div(
                                             [
                                                 html.Div(
                                                     [
-                                                        html.Span("Type: ", style={"color": "#333", "fontSize": "0.9rem", "fontWeight": "500", "marginRight": "0.5rem"}),
+                                                        html.Span(
+                                                            "Type: ",
+                                                            style={
+                                                                "color": "#333",
+                                                                "fontSize": "0.9rem",
+                                                                "fontWeight": "500",
+                                                                "marginRight": "0.5rem",
+                                                            },
+                                                        ),
                                                         dcc.Dropdown(
                                                             id="length-chart-type-dropdown",
                                                             options=[
-                                                                {"label": "Bar Chart", "value": "bar"},
-                                                                {"label": "Box Plot", "value": "box"},
+                                                                {
+                                                                    "label": "Bar Chart",
+                                                                    "value": "bar",
+                                                                },
+                                                                {
+                                                                    "label": "Box Plot",
+                                                                    "value": "box",
+                                                                },
                                                             ],
                                                             value="bar",
                                                             clearable=False,
-                                                            style={"width": "120px", "display": "inline-block", "marginRight": "1rem"},
+                                                            style={
+                                                                "width": "120px",
+                                                                "display": "inline-block",
+                                                                "marginRight": "1rem",
+                                                            },
                                                         ),
-                                                        html.Span("Aggregation: ", style={"color": "#333", "fontSize": "0.9rem", "fontWeight": "500", "marginRight": "0.5rem"}),
+                                                        html.Span(
+                                                            "Aggregation: ",
+                                                            style={
+                                                                "color": "#333",
+                                                                "fontSize": "0.9rem",
+                                                                "fontWeight": "500",
+                                                                "marginRight": "0.5rem",
+                                                            },
+                                                        ),
                                                         dcc.Dropdown(
                                                             id="length-aggregation-dropdown",
                                                             options=[
-                                                                {"label": "Median", "value": "median"},
-                                                                {"label": "Mean", "value": "mean"},
+                                                                {
+                                                                    "label": "Median",
+                                                                    "value": "median",
+                                                                },
+                                                                {
+                                                                    "label": "Mean",
+                                                                    "value": "mean",
+                                                                },
                                                             ],
                                                             value="median",
                                                             clearable=False,
-                                                            style={"width": "120px", "display": "inline-block"},
+                                                            style={
+                                                                "width": "120px",
+                                                                "display": "inline-block",
+                                                            },
                                                         ),
                                                     ],
-                                                    style={"display": "inline-flex", "alignItems": "center", "marginBottom": "1rem"},
+                                                    style={
+                                                        "display": "inline-flex",
+                                                        "alignItems": "center",
+                                                        "marginBottom": "1rem",
+                                                    },
                                                 ),
                                                 dcc.Slider(
                                                     id="median-length-view-slider",
@@ -393,9 +548,14 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                                     className="mb-3",
                                                 ),
                                             ],
-                                            style={"width": "200px", "marginBottom": "1rem"},
+                                            style={
+                                                "width": "200px",
+                                                "marginBottom": "1rem",
+                                            },
                                         ),
-                                        dcc.Loading(html.Div(id="median-length-container")),
+                                        dcc.Loading(
+                                            html.Div(id="median-length-container")
+                                        ),
                                     ],
                                     style={
                                         "background": "white",
@@ -409,7 +569,14 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                             dbc.Col(
                                 html.Div(
                                     [
-                                        html.H4("Most Mentioned Users", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
+                                        html.H4(
+                                            "Most Mentioned Users",
+                                            style={
+                                                "fontWeight": "300",
+                                                "fontSize": "1.1rem",
+                                                "marginBottom": "1rem",
+                                            },
+                                        ),
                                         html.Div(
                                             [
                                                 dcc.Slider(
@@ -422,9 +589,14 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                                     className="mb-3",
                                                 ),
                                             ],
-                                            style={"width": "200px", "marginBottom": "1rem"},
+                                            style={
+                                                "width": "200px",
+                                                "marginBottom": "1rem",
+                                            },
                                         ),
-                                        dcc.Loading(html.Div(id="mentioned-users-container")),
+                                        dcc.Loading(
+                                            html.Div(id="mentioned-users-container")
+                                        ),
                                     ],
                                     style={
                                         "background": "white",
@@ -438,7 +610,14 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                             dbc.Col(
                                 html.Div(
                                     [
-                                        html.H4("Most Replied To Users", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
+                                        html.H4(
+                                            "Most Replied To Users",
+                                            style={
+                                                "fontWeight": "300",
+                                                "fontSize": "1.1rem",
+                                                "marginBottom": "1rem",
+                                            },
+                                        ),
                                         html.Div(
                                             [
                                                 dcc.Slider(
@@ -451,9 +630,14 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                                                     className="mb-3",
                                                 ),
                                             ],
-                                            style={"width": "200px", "marginBottom": "1rem"},
+                                            style={
+                                                "width": "200px",
+                                                "marginBottom": "1rem",
+                                            },
                                         ),
-                                        dcc.Loading(html.Div(id="replied-users-container")),
+                                        dcc.Loading(
+                                            html.Div(id="replied-users-container")
+                                        ),
                                     ],
                                     style={
                                         "background": "white",
@@ -467,10 +651,16 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                         ],
                         className="mb-4",
                     ),
-                    
                     html.Div(
                         [
-                            html.H4("Top 10 Reacted Messages", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
+                            html.H4(
+                                "Top 10 Reacted Messages",
+                                style={
+                                    "fontWeight": "300",
+                                    "fontSize": "1.1rem",
+                                    "marginBottom": "1rem",
+                                },
+                            ),
                             dcc.Loading(html.Div(id="top-reacted-messages")),
                         ],
                         style={
@@ -483,7 +673,6 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                     ),
                 ],
             ),
-            
             # Leaderboards
             html.Div(
                 [
@@ -496,14 +685,22 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                             "color": "#333",
                         },
                     ),
-                    
                     dbc.Row(
                         [
                             dbc.Col(
                                 html.Div(
                                     [
-                                        html.H4("Monthly Champions", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
-                                        dcc.Loading(html.Div(id="monthly-leaderboard-msg")),
+                                        html.H4(
+                                            "Monthly Champions",
+                                            style={
+                                                "fontWeight": "300",
+                                                "fontSize": "1.1rem",
+                                                "marginBottom": "1rem",
+                                            },
+                                        ),
+                                        dcc.Loading(
+                                            html.Div(id="monthly-leaderboard-msg")
+                                        ),
                                     ],
                                     style={
                                         "background": "white",
@@ -517,8 +714,19 @@ def create_layout(df: pd.DataFrame) -> html.Div:
                             dbc.Col(
                                 html.Div(
                                     [
-                                        html.H4("Daily Champions", style={"fontWeight": "300", "fontSize": "1.1rem", "marginBottom": "1rem"}),
-                                        dcc.Loading(html.Div(id="daily-leaderboard-msg-container")),
+                                        html.H4(
+                                            "Daily Champions",
+                                            style={
+                                                "fontWeight": "300",
+                                                "fontSize": "1.1rem",
+                                                "marginBottom": "1rem",
+                                            },
+                                        ),
+                                        dcc.Loading(
+                                            html.Div(
+                                                id="daily-leaderboard-msg-container"
+                                            )
+                                        ),
                                     ],
                                     style={
                                         "background": "white",

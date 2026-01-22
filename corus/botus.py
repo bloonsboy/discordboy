@@ -129,15 +129,33 @@ def get_len_content(content_str: str) -> int:
 
 
 async def fetch_channel_messages_as_df(
-    channel: discord.TextChannel, cache_df: pd.DataFrame
+    channel: discord.TextChannel, cache_df: pd.DataFrame, server_id: int
 ) -> pd.DataFrame:
 
     # Recherche du dernier message dans le cache local (parquet)
     after_date = None
-    if cache_df is not None and not cache_df.empty:
+    # Recherche du dernier message déjà scrapé pour ce channel dans le Parquet
+    server_dir = os.path.join(DATA_DIR, str(server_id))
+    parquet_path = os.path.join(server_dir, "messages.parquet")
+    if os.path.exists(parquet_path):
+        try:
+            df_parquet = pd.read_parquet(parquet_path)
+            channel_msgs = df_parquet[df_parquet["channel_id"] == channel.id]
+            if not channel_msgs.empty:
+                # On suppose que created_at est en timestamp UTC (float)
+                last_ts = channel_msgs["created_at"].max()
+                after_date = datetime.fromtimestamp(float(last_ts), tz=timezone.utc)
+                logging.info(
+                    f"Scraping du channel {channel.id} à partir de {after_date} (UTC, déjà scrapé jusque là)"
+                )
+        except Exception as e:
+            logging.warning(
+                f"Impossible de lire le parquet pour le channel {channel.id} : {e}"
+            )
+    elif cache_df is not None and not cache_df.empty:
         channel_messages = cache_df[cache_df["channel_id"] == channel.id]
         if not channel_messages.empty:
-            after_date = pd.to_datetime(channel_messages["created_at"].max())
+            after_date = pd.to_datetime(channel_messages["created_at"].max(), utc=True)
 
     server_id = 443091773602922497  # À adapter si besoin
     messages_data = []
@@ -198,7 +216,9 @@ async def fetch_channel_messages_as_df(
             if hasattr(e, "status") and getattr(e, "status", None) == 503:
                 attempt += 1
                 logging.error(
-                    f"Discord 503 Service Unavailable sur #{channel.name}, tentative {attempt}/{max_retries}. Attente {retry_delay}s..."
+                    df_parquet = pd.read_parquet(parquet_path)
+                    # Protection anti-doublon
+                    ids_old = set(df_parquet["message_id"].astype(str))
                 )
                 import time
 
@@ -344,7 +364,7 @@ async def run_bot_logic(
     logging.info(f"Preparing to fetch data from {len(text_channels)} channels...")
     for i, channel in enumerate(text_channels, 1):
         try:
-            df = await fetch_channel_messages_as_df(channel, None)
+            df = await fetch_channel_messages_as_df(channel, None, guild.id)
             if not df.empty:
                 all_messages.append(df)
                 logging.info(f"[{i}/{len(text_channels)}] Processing #{channel.name}")
@@ -365,18 +385,37 @@ async def run_bot_logic(
     except Exception as e:
         logging.error(f"Erreur lors de la sauvegarde du Parquet : {e}")
 
-    # Sauvegarde stats CSV (optionnel, à adapter selon besoin)
+    # Sauvegarde leaderboard.csv : nombre de messages par utilisateur et par année
     try:
-        stats_path = os.path.join(server_dir, "stats.csv")
+        leaderboard_path = os.path.join(server_dir, "leaderboard.csv")
         if not final_df.empty:
-            # Extrait rapide : nombre de messages par user
-            stats = (
-                final_df.groupby("author_id").size().reset_index(name="message_count")
+            final_df["timestamp"] = pd.to_datetime(
+                final_df["created_at"], unit="s", errors="coerce"
             )
-            stats.to_csv(stats_path, index=False)
-            logging.info(f"Stats sauvegardées : {stats_path}")
+            final_df["year"] = final_df["timestamp"].dt.year
+            # Charger le mapping id->nom
+            members_path = os.path.join(server_dir, "members.json")
+            if os.path.exists(members_path):
+                with open(members_path, "r", encoding="utf-8") as f:
+                    members = json.load(f)
+                id_to_name = {
+                    int(k): v["name"] if isinstance(v, dict) and "name" in v else str(k)
+                    for k, v in members.items()
+                }
+            else:
+                id_to_name = {uid: str(uid) for uid in final_df["author_id"].unique()}
+            final_df["author_name"] = final_df["author_id"].map(id_to_name)
+            leaderboard = (
+                final_df.groupby(["author_name", "year"]).size().unstack(fill_value=0)
+            )
+            leaderboard["total_messages"] = leaderboard.sum(axis=1)
+            leaderboard = leaderboard.reset_index().sort_values(
+                "total_messages", ascending=False
+            )
+            leaderboard.to_csv(leaderboard_path, index=False)
+            logging.info(f"Leaderboard sauvegardé : {leaderboard_path}")
     except Exception as e:
-        logging.error(f"Erreur lors de la sauvegarde des stats : {e}")
+        logging.error(f"Erreur lors de la sauvegarde du leaderboard : {e}")
 
     await client.close()
     global bot_data_future
