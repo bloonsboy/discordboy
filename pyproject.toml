@@ -1,33 +1,63 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "discordboy"
-version = "1.0.0"
-description = "A Discord bot for various utilities."
+version = "0.3.0"
+description = "A Discord bot for data dashboard."
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 
 authors = [
   { name = "nathboy", email = "nathan.novier@etu.minesparis.psl.eu" },
 ]
 
 dependencies = [
-  "discord.py==2.3.2",
-  "pandas==2.2.2",
-  "pyarrow==16.1.0",
-  "dash==2.17.1",
-  "dash-bootstrap-components==1.6.0",
-  "nest_asyncio==1.5.6",
-  "plotly==5.22.0",
-  "python-dotenv==1.0.1",
-  "firebase-admin==6.4.0",
-  "psycopg2-binary==2.9.9"
+  "discord.py>=2.3.2,<3.0",
+  "pandas>=2.0.0,<3.0",
+  "pyarrow>=14.0.0",
+  "dash>=2.14.0,<3.0",
+  "dash-bootstrap-components>=1.4.0,<2.0",
+  "nest_asyncio>=1.5.0,<2.0",
+  "plotly>=5.14.0",
+  "python-dotenv>=1.0.0,<2.0",
+  "firebase-admin>=6.0.0",
+  "psycopg2-binary>=2.9.0,<3.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0,<8.0",
+  "pytest-asyncio>=0.20.0,<1.0",
+  "black>=23.0.0,<24.0",
+  "flake8>=6.0.0,<7.0",
+  "isort>=5.12.0,<6.0",
+  "mypy>=1.0.0,<2.0",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/bloonsboy/discordboy"
 
+[project.scripts]
+discordboy = "main:main"
+
 [tool.setuptools]
 packages = ["corus", "dashboardus", "dataus"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
+py_version = 310
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false

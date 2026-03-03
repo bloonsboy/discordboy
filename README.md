@@ -1,72 +1,49 @@
 # Discordboy
 
-This project analyzes activity from a Discord server and displays it in an interactive web dashboard.
+uh oh discord data hmmm virgule only for now i guess
 
-## Installation & Setup
+## What you need
 
-This project uses a `pyproject.toml` file to manage dependencies. Follow these steps to create a clean environment and install the required packages.
+- Python 3.10+
+- pip
 
-### Prerequisites
+## Installation
 
-- Python 3.10 or newer
-- `pip` and `venv` (usually included with Python)
+### Windows
 
-### 1. Create a Virtual Environment
-
-First, create a virtual environment in your project folder. This keeps the project's dependencies isolated from your main system.
-
-```sh
-# From your project's root directory (where pyproject.toml is)
+```powershell
 python -m venv discvenv
-```
-
-### 2. Activate the Virtual Environment
-
-Next, you need to activate the environment in your terminal session.
-
-**On Windows (PowerShell/CMD):**
-
-```sh
-.\discvenv\Scripts\activate
-```
-
-**On macOS / Linux (Bash/Zsh):**
-
-```sh
-source discordboy/bin/activate
-```
-
-
-### 3. Install Dependencies
-
-With the virtual environment active, use pip. pip will automatically read the pyproject.toml file and install all listed dependencies.
-
-```sh
+.\discvenv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -e .
 ```
 
-### 4. Configure Firebase (Firestore)
+### Linux
 
-Pour utiliser Firestore, il te faut un projet Firebase et un fichier de credentials (JSON) :
-
-1. Va sur https://console.firebase.google.com/ et crée un projet.
-2. Ajoute une application (Web ou autre) et génère une clé de service (Service Account Key).
-3. Télécharge le fichier JSON et place-le à la racine du projet (ex : `firebase-credentials.json`).
-4. Ajoute la variable d’environnement suivante :
-
-**Windows :**
-```sh
-$env:GOOGLE_APPLICATION_CREDENTIALS="./firebase-credentials.json"
-```
-**Linux/macOS :**
-```sh
-export GOOGLE_APPLICATION_CREDENTIALS=./firebase-credentials.json
+```bash
+python3 -m venv discvenv
+source discvenv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
 ```
 
-### 5. Launch the Application
+## Config
 
-Make sure you have a .env file at the root of your project containing your DISCORD_TOKEN, and then run the main script:
+`.env`
+```env
+DISCORD_TOKEN=your_discord_token_here
+```
 
-```sh
+## Launch
+
+```bash
+python main.py --scrape-server --web
+```
+
+Or dashboard :
+
+```bash
+python main.py --web-only
+```
 python main.py
 ```
